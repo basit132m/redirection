@@ -2,14 +2,14 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.4
+ * Version: 3.5
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.4' );
+define( 'TS_DL_VERSION', '3.5' );
 
 /* ==========================================================
  * SETTINGS
@@ -24,6 +24,13 @@ function ts_dl_default_settings() {
 		'source_id'         => '', // optional key so one download.php can serve several sites
 		'button_text'       => 'Get It Now',
 		'post_types'        => array( 'post', 'game' ),
+		// Where the download page reads each game-info value from.
+		// Empty = use this plugin's own field. A meta key = read that custom
+		// field. "tax:slug" = read the terms of that taxonomy (e.g. Genre).
+		'map_genre'         => '',
+		'map_size'          => '',
+		'map_version'       => '',
+		'map_title_id'      => '',
 	);
 }
 
@@ -92,6 +99,10 @@ function ts_dl_maybe_save_settings() {
 	$settings['post_types'] = array_values( array_filter( $chosen, 'post_type_exists' ) );
 	if ( empty( $settings['post_types'] ) ) {
 		$settings['post_types'] = array( 'post' );
+	}
+
+	foreach ( array( 'map_genre', 'map_size', 'map_version', 'map_title_id' ) as $mkey ) {
+		$settings[ $mkey ] = isset( $_POST[ $mkey ] ) ? sanitize_text_field( wp_unslash( $_POST[ $mkey ] ) ) : '';
 	}
 
 	update_option( 'ts_dl_settings', $settings );
@@ -174,11 +185,48 @@ function ts_dl_settings_page_html() {
 					</td>
 				</tr>
 			</table>
-			<?php submit_button( 'Save changes' ); ?>
+			<h2>Game information source</h2>
+				<p class="description" style="max-width:820px;">The download page shows Genre, Game Size, Version and Title ID. Choose where each value is read from: leave <strong>blank</strong> to use this plugin&#8217;s own field, enter a <strong>custom field (meta) key</strong>, or enter <code>tax:slug</code> to read a taxonomy&#8217;s terms (good for Genre). Use the inspector below to find the exact keys.</p>
+				<table class="form-table" role="presentation">
+					<?php
+					$ts_dl_map_fields = array(
+						'map_genre'    => 'Genre',
+						'map_size'     => 'Game Size',
+						'map_version'  => 'Version',
+						'map_title_id' => 'Title ID',
+					);
+					foreach ( $ts_dl_map_fields as $ts_dl_mkey => $ts_dl_mlabel ) :
+						?>
+						<tr>
+							<th scope="row"><label for="<?php echo esc_attr( $ts_dl_mkey ); ?>"><?php echo esc_html( $ts_dl_mlabel ); ?></label></th>
+							<td>
+								<input name="<?php echo esc_attr( $ts_dl_mkey ); ?>" id="<?php echo esc_attr( $ts_dl_mkey ); ?>" type="text" class="regular-text code"
+									value="<?php echo esc_attr( $settings[ $ts_dl_mkey ] ); ?>"
+									placeholder="meta_key  or  tax:genre">
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</table>
+
+				<?php submit_button( 'Save changes' ); ?>
 		</form>
 
 		<hr>
-		<h2>REST endpoint</h2>
+		<h2>Field inspector</h2>
+			<p class="description">Enter a published game&#8217;s ID to list every custom field and taxonomy stored on it, so you can find the right key to map above.</p>
+			<form method="get" action="">
+				<input type="hidden" name="page" value="ts-download-box">
+				<input type="number" name="inspect" min="1" value="<?php echo isset( $_GET['inspect'] ) ? (int) $_GET['inspect'] : ''; // phpcs:ignore WordPress.Security.NonceVerification ?>" placeholder="Post ID" class="small-text">
+				<?php submit_button( 'Inspect', 'secondary', 'do_inspect', false ); ?>
+			</form>
+			<?php
+			if ( isset( $_GET['inspect'] ) && (int) $_GET['inspect'] > 0 ) { // phpcs:ignore WordPress.Security.NonceVerification
+				ts_dl_render_inspector( (int) $_GET['inspect'] );
+			}
+			?>
+
+			<hr>
+			<h2>REST endpoint</h2>
 		<p>The external page reads links from:</p>
 		<p><code><?php echo esc_html( rest_url( 'tsdl/v1/links/POST_ID' ) ); ?></code></p>
 	</div>
@@ -188,6 +236,88 @@ function ts_dl_settings_page_html() {
 /* ==========================================================
  * 1. ADMIN META BOX — repeatable rows + game header fields
  * ========================================================== */
+/**
+ * List all custom fields and taxonomy terms for a post, to help find the
+ * correct key to map in "Game information source".
+ */
+function ts_dl_render_inspector( $post_id ) {
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		echo '<div class="notice notice-error inline"><p>No post found with that ID.</p></div>';
+		return;
+	}
+
+	echo '<h3>' . esc_html( get_the_title( $post_id ) ) . ' <span style="font-weight:400;color:#777;">(ID ' . (int) $post_id . ', type: ' . esc_html( $post->post_type ) . ')</span></h3>';
+
+	// Taxonomies (Genre is often a taxonomy).
+	$taxes = get_object_taxonomies( $post->post_type, 'objects' );
+	echo '<h4>Taxonomies</h4>';
+	if ( empty( $taxes ) ) {
+		echo '<p><em>None.</em></p>';
+	} else {
+		echo '<table class="widefat striped" style="max-width:820px;"><thead><tr><th>Map value</th><th>Taxonomy</th><th>Terms on this post</th></tr></thead><tbody>';
+		foreach ( $taxes as $tax ) {
+			$terms      = get_the_terms( $post_id, $tax->name );
+			$term_names = is_array( $terms ) ? implode( ', ', wp_list_pluck( $terms, 'name' ) ) : '—';
+			printf(
+				'<tr><td><code>tax:%s</code></td><td>%s</td><td>%s</td></tr>',
+				esc_html( $tax->name ),
+				esc_html( $tax->labels->singular_name ),
+				esc_html( $term_names )
+			);
+		}
+		echo '</tbody></table>';
+	}
+
+	// Custom fields (meta).
+	$meta = get_post_custom( $post_id );
+	echo '<h4>Custom fields (meta)</h4>';
+	if ( empty( $meta ) ) {
+		echo '<p><em>None.</em></p>';
+	} else {
+		echo '<table class="widefat striped" style="max-width:820px;"><thead><tr><th>Map value (meta key)</th><th>Value</th></tr></thead><tbody>';
+		foreach ( $meta as $key => $vals ) {
+			$value = isset( $vals[0] ) ? (string) $vals[0] : '';
+			if ( strlen( $value ) > 200 ) {
+				$value = substr( $value, 0, 200 ) . '…';
+			}
+			printf( '<tr><td><code>%s</code></td><td>%s</td></tr>', esc_html( $key ), esc_html( $value ) );
+		}
+		echo '</tbody></table>';
+	}
+}
+
+/**
+ * Resolve a single game-info value for a post using the configured mapping.
+ *
+ * @param int    $post_id       Post ID.
+ * @param string $source        Mapping value: '' (use fallback meta), a meta key, or "tax:slug".
+ * @param string $fallback_meta This plugin's own meta key, used when $source is empty.
+ * @return string
+ */
+function ts_dl_resolve_field( $post_id, $source, $fallback_meta ) {
+	$source = trim( (string) $source );
+
+	if ( '' === $source ) {
+		return (string) get_post_meta( $post_id, $fallback_meta, true );
+	}
+
+	if ( 0 === strpos( $source, 'tax:' ) ) {
+		$taxonomy = substr( $source, 4 );
+		$terms    = get_the_terms( $post_id, $taxonomy );
+		if ( is_array( $terms ) && ! is_wp_error( $terms ) ) {
+			return implode( ', ', wp_list_pluck( $terms, 'name' ) );
+		}
+		return '';
+	}
+
+	$value = get_post_meta( $post_id, $source, true );
+	if ( is_array( $value ) ) {
+		$value = implode( ', ', array_filter( array_map( 'strval', $value ) ) );
+	}
+	return (string) $value;
+}
+
 function ts_dl_add_meta_box() {
 	foreach ( ts_dl_post_types() as $pt ) {
 		add_meta_box( 'ts_dl_box_meta', 'Download Links', 'ts_dl_meta_box_html', $pt, 'normal', 'high' );
@@ -365,16 +495,17 @@ function ts_dl_rest_links( $request ) {
 		);
 	}
 
-	$image = has_post_thumbnail( $id ) ? get_the_post_thumbnail_url( $id, 'large' ) : '';
+	$image    = has_post_thumbnail( $id ) ? get_the_post_thumbnail_url( $id, 'large' ) : '';
+	$settings = ts_dl_get_settings();
 
 	return array(
 		'id'       => $id,
 		'title'    => html_entity_decode( get_the_title( $id ), ENT_QUOTES, 'UTF-8' ),
 		'image'    => (string) $image,
-		'genre'    => (string) get_post_meta( $id, 'ts_dl_genre', true ),
-		'version'  => (string) get_post_meta( $id, 'ts_dl_version', true ),
-		'size'     => (string) get_post_meta( $id, 'ts_dl_total_size', true ),
-		'title_id' => (string) get_post_meta( $id, 'ts_dl_title_id', true ),
+		'genre'    => ts_dl_resolve_field( $id, $settings['map_genre'], 'ts_dl_genre' ),
+		'version'  => ts_dl_resolve_field( $id, $settings['map_version'], 'ts_dl_version' ),
+		'size'     => ts_dl_resolve_field( $id, $settings['map_size'], 'ts_dl_total_size' ),
+		'title_id' => ts_dl_resolve_field( $id, $settings['map_title_id'], 'ts_dl_title_id' ),
 		'files'    => count( $out ),
 		'links'    => $out,
 	);
