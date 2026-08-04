@@ -17,7 +17,7 @@
 // Keep this page out of search indexes. Sent as an HTTP header (authoritative,
 // applies even before the HTML <meta name="robots"> renders below).
 if ( ! headers_sent() ) {
-	header( 'X-Robots-Tag: noindex, nofollow', true );
+	header( 'X-Robots-Tag: noindex, nofollow, noarchive', true );
 }
 
 $ALLOWED_SOURCES = array(
@@ -129,7 +129,7 @@ $title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
+<meta name="robots" content="noindex, nofollow, noarchive">
 <title><?php echo htmlspecialchars( $title, ENT_QUOTES ); ?> — Download</title>
 <style>
 	:root{ --red:#e8394c; --red-dark:#cf2a3c; --ink:#1a1a1a; --muted:#6b7280; --line:#ececec; --card:#fafafa; }

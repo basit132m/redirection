@@ -1,4 +1,10 @@
-# nspsitex.site is a utility download/redirect domain.
-# It should never appear in search engines. Block all crawling.
+# nspsitex.site — utility download domain.
+#
+# Crawling is intentionally ALLOWED so Google can read the page-level
+# noindex (sent as both a <meta name="robots"> tag and an X-Robots-Tag
+# HTTP header on download.php). That is what reliably keeps these pages
+# OUT of Google's index. Do NOT add "Disallow: /" here — blocking the
+# crawl would stop Google from seeing the noindex and could cause a
+# bare-URL listing instead.
 User-agent: *
-Disallow: /
+Allow: /
