@@ -14,6 +14,12 @@
  * If you leave Source ID blank in WordPress, the DEFAULT_SOURCE below is used.
  * ---------------------------------------------------------------------------
  */
+// Keep this page out of search indexes. Sent as an HTTP header (authoritative,
+// applies even before the HTML <meta name="robots"> renders below).
+if ( ! headers_sent() ) {
+	header( 'X-Robots-Tag: noindex, nofollow', true );
+}
+
 $ALLOWED_SOURCES = array(
 	'nspvault' => 'https://www.nspvault.com',
 	// Add more sites here if this same download.php serves them, e.g.
