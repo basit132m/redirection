@@ -2,14 +2,14 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.6
+ * Version: 3.7
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.6' );
+define( 'TS_DL_VERSION', '3.7' );
 
 // Ignore repeat clicks from the same visitor within this many seconds, so a
 // double-click or quick refresh does not inflate the download count.
@@ -778,3 +778,281 @@ add_action( 'pre_get_posts', function ( $query ) {
 		$query->set( 'orderby', 'meta_value_num' );
 	}
 } );
+
+/* ==========================================================
+ * 6. TOP ROMS PAGE — [top_roms] shortcode
+ * ========================================================== */
+
+/**
+ * Default post types for the Top ROMs list (prefer the "game" CPT).
+ *
+ * @return string[]
+ */
+function ts_dl_toproms_default_types() {
+	if ( post_type_exists( 'game' ) ) {
+		return array( 'game' );
+	}
+	$types = ts_dl_post_types();
+	return $types ? $types : array( 'post' );
+}
+
+/**
+ * Sum of all recorded downloads across the given post types.
+ *
+ * @param string[] $types Post types.
+ * @return int
+ */
+function ts_dl_toproms_total_downloads( $types ) {
+	global $wpdb;
+	$types = array_map( 'sanitize_key', $types );
+	if ( empty( $types ) ) {
+		return 0;
+	}
+	$in = "'" . implode( "','", array_map( 'esc_sql', $types ) ) . "'";
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $in is sanitized post-type keys.
+	$sql = "SELECT COALESCE( SUM( CAST( pm.meta_value AS UNSIGNED ) ), 0 )
+			FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key = 'ts_dl_hits' AND p.post_status = 'publish' AND p.post_type IN ($in)";
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+	return (int) $wpdb->get_var( $sql );
+}
+
+/**
+ * kk Star Ratings average + vote count for a post (best-effort, safe if absent).
+ *
+ * @param int $post_id Post ID.
+ * @return array{avg:float,casts:int}
+ */
+function ts_dl_get_rating( $post_id ) {
+	$avg   = get_post_meta( $post_id, '_kksr_avg', true );
+	$casts = get_post_meta( $post_id, '_kksr_casts', true );
+	return array(
+		'avg'   => is_numeric( $avg ) ? (float) $avg : 0.0,
+		'casts' => is_numeric( $casts ) ? (int) $casts : 0,
+	);
+}
+
+/**
+ * Render a 5-star rating bar (partial fill supported).
+ *
+ * @param float $avg Average out of 5.
+ * @return string
+ */
+function ts_dl_stars_html( $avg ) {
+	$pct = max( 0, min( 100, ( $avg / 5 ) * 100 ) );
+	return '<span class="tr-stars"><span class="tr-fill" style="width:' . esc_attr( $pct ) . '%"></span></span>';
+}
+
+/**
+ * Ordered list of post IDs by downloads (games with hits first, then newest).
+ *
+ * @param string[] $types Post types.
+ * @param int      $count Max items.
+ * @return int[]
+ */
+function ts_dl_toproms_ids( $types, $count ) {
+	$with = new WP_Query(
+		array(
+			'post_type'      => $types,
+			'post_status'    => 'publish',
+			'posts_per_page' => $count,
+			'meta_key'       => 'ts_dl_hits', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+			'orderby'        => 'meta_value_num',
+			'order'          => 'DESC',
+			'no_found_rows'  => true,
+			'fields'         => 'ids',
+		)
+	);
+	$ids = $with->posts;
+
+	// Fill any remaining slots with games that have no recorded downloads yet.
+	if ( count( $ids ) < $count ) {
+		$without = new WP_Query(
+			array(
+				'post_type'      => $types,
+				'post_status'    => 'publish',
+				'posts_per_page' => $count - count( $ids ),
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'no_found_rows'  => true,
+				'fields'         => 'ids',
+				'post__not_in'   => $ids ? $ids : array( 0 ),
+				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array(
+						'key'     => 'ts_dl_hits',
+						'compare' => 'NOT EXISTS',
+					),
+				),
+			)
+		);
+		$ids = array_merge( $ids, $without->posts );
+	}
+
+	return $ids;
+}
+
+/**
+ * [top_roms count="50" post_type="game" title="..."] — most-downloaded list.
+ */
+function ts_dl_toproms_shortcode( $atts ) {
+	$atts = shortcode_atts(
+		array(
+			'count'     => 50,
+			'post_type' => '',
+			'title'     => '',
+			'subtitle'  => '',
+		),
+		$atts,
+		'top_roms'
+	);
+
+	$count = max( 1, (int) $atts['count'] );
+	$types = '' !== $atts['post_type']
+		? array_map( 'trim', explode( ',', $atts['post_type'] ) )
+		: ts_dl_toproms_default_types();
+	$types = array_values( array_filter( $types, 'post_type_exists' ) );
+	if ( empty( $types ) ) {
+		$types = array( 'post' );
+	}
+
+	$heading  = '' !== $atts['title'] ? $atts['title'] : sprintf( 'Top %s Most Downloaded Games', number_format_i18n( $count ) );
+	$subtitle = '' !== $atts['subtitle'] ? $atts['subtitle'] : sprintf( 'The most popular games on %s, ranked by total downloads.', get_bloginfo( 'name' ) );
+
+	$ids   = ts_dl_toproms_ids( $types, $count );
+	$total = ts_dl_toproms_total_downloads( $types );
+
+	if ( empty( $ids ) ) {
+		return '<div class="ts-toproms"><p style="text-align:center;color:#777;">No games to show yet.</p></div>';
+	}
+
+	$dl_icon = '&#8681;';
+
+	ob_start();
+	ts_dl_toproms_styles();
+	?>
+	<div class="ts-toproms">
+		<div class="tr-hero">
+			<div class="tr-trophy">&#127942;</div>
+			<h2 class="tr-heading"><?php echo esc_html( $heading ); ?></h2>
+			<p class="tr-sub"><?php echo esc_html( $subtitle ); ?></p>
+			<div class="tr-total"><?php echo wp_kses_post( $dl_icon ); ?>&nbsp;<strong><?php echo esc_html( number_format_i18n( $total ) ); ?></strong>&nbsp;total downloads</div>
+		</div>
+
+		<?php
+		// Podium: top 3.
+		$podium = array_slice( $ids, 0, 3 );
+		if ( $podium ) :
+			?>
+			<div class="tr-podium">
+				<?php
+				foreach ( $podium as $i => $pid ) :
+					$rank    = $i + 1;
+					$hits    = (int) get_post_meta( $pid, 'ts_dl_hits', true );
+					$rating  = ts_dl_get_rating( $pid );
+					$thumb   = has_post_thumbnail( $pid ) ? get_the_post_thumbnail( $pid, 'medium', array( 'class' => 'tr-card-img', 'alt' => esc_attr( get_the_title( $pid ) ) ) ) : '<div class="tr-card-img tr-noimg"></div>';
+					?>
+					<a class="tr-card rank<?php echo (int) $rank; ?>" href="<?php echo esc_url( get_permalink( $pid ) ); ?>">
+						<div class="tr-badge">&#127942; #<?php echo (int) $rank; ?></div>
+						<div class="tr-card-imgwrap"><?php echo $thumb; // phpcs:ignore WordPress.Security.EscapeOutput ?></div>
+						<div class="tr-card-title"><?php echo esc_html( get_the_title( $pid ) ); ?></div>
+						<div class="tr-card-rating">
+							<?php echo ts_dl_stars_html( $rating['avg'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+							<?php if ( $rating['avg'] > 0 ) : ?><span class="tr-avg"><?php echo esc_html( number_format( $rating['avg'], 1 ) ); ?></span><?php endif; ?>
+						</div>
+						<div class="tr-card-dl"><?php echo wp_kses_post( $dl_icon ); ?>&nbsp;<?php echo esc_html( number_format_i18n( $hits ) ); ?> downloads</div>
+					</a>
+				<?php endforeach; ?>
+			</div>
+		<?php endif; ?>
+
+		<?php
+		// Ranked list: 4..count.
+		$rest = array_slice( $ids, 3 );
+		if ( $rest ) :
+			?>
+			<div class="tr-list">
+				<?php
+				foreach ( $rest as $j => $rid ) :
+					$rank   = $j + 4;
+					$hits   = (int) get_post_meta( $rid, 'ts_dl_hits', true );
+					$rating = ts_dl_get_rating( $rid );
+					$thumb  = has_post_thumbnail( $rid ) ? get_the_post_thumbnail( $rid, 'thumbnail', array( 'class' => 'tr-thumb', 'alt' => esc_attr( get_the_title( $rid ) ) ) ) : '<div class="tr-thumb tr-noimg"></div>';
+					?>
+					<a class="tr-row" href="<?php echo esc_url( get_permalink( $rid ) ); ?>">
+						<span class="tr-rank"><?php echo (int) $rank; ?></span>
+						<?php echo $thumb; // phpcs:ignore WordPress.Security.EscapeOutput ?>
+						<span class="tr-info">
+							<span class="tr-title"><?php echo esc_html( get_the_title( $rid ) ); ?></span>
+							<span class="tr-rating">
+								<?php echo ts_dl_stars_html( $rating['avg'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+								<?php if ( $rating['avg'] > 0 ) : ?><span class="tr-avg"><?php echo esc_html( number_format( $rating['avg'], 1 ) ); ?></span><?php endif; ?>
+							</span>
+						</span>
+						<span class="tr-downloads"><?php echo wp_kses_post( $dl_icon ); ?>&nbsp;<?php echo esc_html( number_format_i18n( $hits ) ); ?></span>
+					</a>
+				<?php endforeach; ?>
+			</div>
+		<?php endif; ?>
+	</div>
+	<?php
+	return ob_get_clean();
+}
+add_shortcode( 'top_roms', 'ts_dl_toproms_shortcode' );
+
+/**
+ * Print the Top ROMs styles once per request.
+ */
+function ts_dl_toproms_styles() {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+	?>
+	<style>
+	.ts-toproms{--tr-red:#e8394c;--tr-red2:#b81d2f;max-width:900px;margin:0 auto;color:#1a1a1a;}
+	.ts-toproms *{box-sizing:border-box;}
+	.tr-hero{background:linear-gradient(135deg,#e8394c 0%,#b81d2f 100%);color:#fff;border-radius:18px;padding:34px 24px;text-align:center;margin:0 0 26px;box-shadow:0 10px 30px rgba(184,29,47,.25);}
+	.tr-trophy{font-size:34px;line-height:1;margin-bottom:6px;}
+	.tr-heading{margin:0 0 8px;font-size:26px;font-weight:800;color:#fff;}
+	.tr-sub{margin:0 0 16px;font-size:14px;opacity:.92;}
+	.tr-total{display:inline-flex;align-items:center;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:8px 18px;font-size:15px;}
+	.tr-total strong{margin:0 4px;}
+	.tr-podium{display:flex;gap:16px;justify-content:center;align-items:stretch;flex-wrap:wrap;margin:0 0 26px;}
+	.tr-card{flex:1 1 240px;max-width:280px;background:#fff;border:1px solid #eee;border-radius:16px;padding:18px 16px 16px;text-align:center;text-decoration:none;color:#1a1a1a;box-shadow:0 4px 14px rgba(0,0,0,.06);transition:transform .15s,box-shadow .15s;position:relative;}
+	.tr-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.12);}
+	.tr-card.rank1{order:2;border:2px solid #f4b400;box-shadow:0 10px 26px rgba(244,180,0,.28);}
+	.tr-card.rank2{order:1;}
+	.tr-card.rank3{order:3;}
+	.tr-badge{display:inline-block;background:linear-gradient(135deg,#e8394c,#b81d2f);color:#fff;font-weight:800;font-size:13px;padding:4px 12px;border-radius:999px;margin-bottom:12px;}
+	.tr-card.rank1 .tr-badge{background:linear-gradient(135deg,#f6c33f,#e0a416);}
+	.tr-card-imgwrap{margin:0 0 12px;}
+	.tr-card-img{width:100%;height:150px;object-fit:cover;border-radius:12px;display:block;}
+	.tr-card.rank1 .tr-card-img{height:170px;}
+	.tr-noimg{background:#f0f0f0;}
+	.tr-card-title{font-weight:700;font-size:15px;margin:0 0 8px;line-height:1.3;}
+	.tr-card-rating,.tr-rating{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:8px;}
+	.tr-card-dl{display:inline-flex;align-items:center;color:var(--tr-red2);font-weight:800;font-size:14px;}
+	.tr-stars{position:relative;display:inline-block;color:#e0e0e0;font-size:14px;letter-spacing:2px;font-family:Arial,sans-serif;}
+	.tr-stars::before{content:"\2605\2605\2605\2605\2605";}
+	.tr-fill{position:absolute;left:0;top:0;overflow:hidden;white-space:nowrap;color:#f5a623;}
+	.tr-fill::before{content:"\2605\2605\2605\2605\2605";}
+	.tr-avg{color:#6b7280;font-size:13px;font-weight:700;}
+	.tr-list{display:flex;flex-direction:column;gap:10px;}
+	.tr-row{display:flex;align-items:center;gap:14px;padding:12px 16px;border:1px solid #eee;border-radius:12px;background:#fff;text-decoration:none;color:#1a1a1a;transition:border-color .15s,background .15s;}
+	.tr-row:hover{border-color:var(--tr-red);background:#fdf2f4;}
+	.tr-rank{flex:0 0 auto;width:30px;text-align:center;font-weight:800;color:var(--tr-red);font-size:16px;}
+	.tr-thumb{width:54px;height:54px;object-fit:cover;border-radius:8px;flex:0 0 auto;}
+	.tr-info{flex:1;min-width:0;}
+	.tr-title{display:block;font-weight:700;font-size:15px;margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+	.tr-rating{justify-content:flex-start;margin:0;}
+	.tr-downloads{flex:0 0 auto;display:inline-flex;align-items:center;color:#1a1a1a;font-weight:800;font-size:14px;white-space:nowrap;}
+	@media (max-width:640px){
+		.tr-card.rank1,.tr-card.rank2,.tr-card.rank3{order:0;flex-basis:100%;max-width:100%;}
+		.tr-heading{font-size:22px;}
+		.tr-title{white-space:normal;}
+	}
+	</style>
+	<?php
+}
