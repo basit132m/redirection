@@ -2,14 +2,14 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.1
+ * Version: 3.2
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.1' );
+define( 'TS_DL_VERSION', '3.2' );
 
 /* ==========================================================
  * SETTINGS
@@ -402,7 +402,7 @@ function ts_dl_render_button( $post_id ) {
 	ob_start();
 	?>
 	<div id="ts-downloads" class="ts-dl-wrap">
-		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" rel="nofollow noopener">
+		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" target="_blank" rel="nofollow noopener">
 			<span class="ts-dl-getnow-icon"><?php echo $nintendo_icon; // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?></span>
 			<?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?>
 		</a>
