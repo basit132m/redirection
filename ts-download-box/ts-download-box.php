@@ -2,14 +2,20 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.5
+ * Version: 3.6
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.5' );
+define( 'TS_DL_VERSION', '3.6' );
+
+// Ignore repeat clicks from the same visitor within this many seconds, so a
+// double-click or quick refresh does not inflate the download count.
+if ( ! defined( 'TS_DL_HIT_DEDUPE_SECONDS' ) ) {
+	define( 'TS_DL_HIT_DEDUPE_SECONDS', 15 );
+}
 
 /* ==========================================================
  * SETTINGS
@@ -512,6 +518,67 @@ function ts_dl_rest_links( $request ) {
 }
 
 /* ==========================================================
+ * 2b. REST ENDPOINT — download hit counter
+ * ========================================================== */
+add_action( 'rest_api_init', function () {
+	register_rest_route(
+		'tsdl/v1',
+		'/hit/(?P<id>\d+)',
+		array(
+			// GET returns the current count; POST records a click and returns the new count.
+			array(
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => 'ts_dl_rest_hit',
+			),
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => 'ts_dl_rest_hit',
+			),
+		)
+	);
+} );
+
+/**
+ * Best-effort client IP (REMOTE_ADDR only — X-Forwarded-For is spoofable).
+ */
+function ts_dl_client_ip() {
+	$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? wp_unslash( $_SERVER['REMOTE_ADDR'] ) : '';
+	return sanitize_text_field( $ip );
+}
+
+/**
+ * Read (GET) or increment (POST) a post's download-click counter.
+ */
+function ts_dl_rest_hit( $request ) {
+	$id   = (int) $request['id'];
+	$post = get_post( $id );
+
+	if ( ! $post || 'publish' !== $post->post_status ) {
+		return new WP_Error( 'not_found', 'Not found.', array( 'status' => 404 ) );
+	}
+
+	$hits = (int) get_post_meta( $id, 'ts_dl_hits', true );
+
+	if ( 'POST' === $request->get_method() ) {
+		// Debounce repeat hits from the same IP so a double-click or refresh
+		// does not inflate the count.
+		$dedupe_key = 'ts_dl_hit_' . md5( ts_dl_client_ip() . '|' . $id );
+		if ( ! get_transient( $dedupe_key ) ) {
+			++$hits;
+			update_post_meta( $id, 'ts_dl_hits', $hits );
+			set_transient( $dedupe_key, 1, TS_DL_HIT_DEDUPE_SECONDS );
+		}
+	}
+
+	return array(
+		'id'   => $id,
+		'hits' => $hits,
+	);
+}
+
+/* ==========================================================
  * 3. FRONTEND — single "Get It Now" button
  * ========================================================== */
 function ts_dl_get_download_page_link( $post_id ) {
@@ -548,12 +615,16 @@ function ts_dl_render_button( $post_id ) {
 		. '<path d="M17.4 2H15v20h2.4a4.6 4.6 0 0 0 4.6-4.6V6.6A4.6 4.6 0 0 0 17.4 2zm-.15 16.95a1.65 1.65 0 1 1 0-3.3 1.65 1.65 0 0 1 0 3.3z"/>'
 		. '</svg>';
 
+	$hits    = (int) get_post_meta( $post_id, 'ts_dl_hits', true );
+	$hit_url = rest_url( 'tsdl/v1/hit/' . $post_id );
+
 	ob_start();
 	?>
 	<div id="ts-downloads" class="ts-dl-wrap">
-		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" target="_blank" rel="nofollow noopener">
+		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" target="_blank" rel="nofollow noopener" data-ts-hit-url="<?php echo esc_url( $hit_url ); ?>">
 			<span class="ts-dl-getnow-icon"><?php echo $nintendo_icon; // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?></span>
 			<?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?>
+			<span class="ts-dl-count" data-count="<?php echo esc_attr( $hits ); ?>" title="Total downloads">&#8681;&nbsp;<span class="ts-dl-count-n"><?php echo esc_html( number_format_i18n( $hits ) ); ?></span></span>
 		</a>
 	</div>
 	<?php
@@ -602,6 +673,45 @@ add_shortcode( 'download_box', function () {
 	return ts_dl_render_button( get_the_ID() );
 } );
 
+/**
+ * Front-end tracking: refresh the live count on load (accurate even when the
+ * page is cached) and record a hit on click via a non-blocking beacon.
+ */
+add_action( 'wp_footer', function () {
+	if ( ! is_singular( ts_dl_post_types() ) ) {
+		return;
+	}
+	?>
+	<script>
+	(function(){
+		var btn = document.querySelector('.ts-dl-getnow[data-ts-hit-url]');
+		if(!btn){ return; }
+		var url = btn.getAttribute('data-ts-hit-url');
+		var badge = btn.querySelector('.ts-dl-count');
+		var numEl = btn.querySelector('.ts-dl-count-n');
+		function fmt(n){ try { return Number(n).toLocaleString(); } catch(e){ return String(n); } }
+		function setCount(n){ if(numEl){ numEl.textContent = fmt(n); } if(badge){ badge.setAttribute('data-count', n); } }
+
+		// Live count so the number is fresh even behind a full-page cache.
+		fetch(url, { headers: { 'Accept':'application/json' } })
+			.then(function(r){ return r.json(); })
+			.then(function(d){ if(d && typeof d.hits !== 'undefined'){ setCount(d.hits); } })
+			.catch(function(){});
+
+		// Record the click without delaying navigation.
+		btn.addEventListener('click', function(){
+			try {
+				if (navigator.sendBeacon) { navigator.sendBeacon(url); }
+				else { fetch(url, { method:'POST', keepalive:true }); }
+			} catch(e){}
+			var current = parseInt((badge && badge.getAttribute('data-count')) || '0', 10) || 0;
+			setCount(current + 1); // optimistic bump for immediate feedback
+		});
+	})();
+	</script>
+	<?php
+} );
+
 /* ==========================================================
  * 4. STYLES
  * ========================================================== */
@@ -618,6 +728,7 @@ function ts_dl_styles() {
 	.ts-dl-getnow:active{transform:translateY(1px);}
 	.ts-dl-getnow-icon{display:inline-flex;align-items:center;}
 	.ts-dl-getnow-icon svg{width:20px;height:20px;display:block;}
+	.ts-dl-count{display:inline-flex;align-items:center;background:rgba(255,255,255,.22);color:#fff;font-weight:700;font-size:13px;line-height:1;padding:5px 10px;border-radius:999px;margin-left:2px;white-space:nowrap;}
 	@media (max-width:480px){ .ts-dl-getnow{min-width:0;width:100%;padding:16px 24px;} }
 	.ts-dl-list{display:flex;flex-direction:column;gap:12px;}
 	.ts-dl-btn{display:flex;justify-content:space-between;align-items:center;background:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:14px 18px;text-decoration:none;transition:border-color .2s,background .2s;}
@@ -629,3 +740,41 @@ function ts_dl_styles() {
 	<?php
 }
 add_action( 'wp_head', 'ts_dl_styles' );
+
+/* ==========================================================
+ * 5. ADMIN — "Downloads" column (sortable) for popularity
+ * ========================================================== */
+function ts_dl_add_hits_column( $columns ) {
+	$columns['ts_dl_hits'] = __( 'Downloads', 'ts-download-box' );
+	return $columns;
+}
+
+function ts_dl_render_hits_column( $column, $post_id ) {
+	if ( 'ts_dl_hits' === $column ) {
+		echo esc_html( number_format_i18n( (int) get_post_meta( $post_id, 'ts_dl_hits', true ) ) );
+	}
+}
+
+function ts_dl_sortable_hits_column( $columns ) {
+	$columns['ts_dl_hits'] = 'ts_dl_hits';
+	return $columns;
+}
+
+add_action( 'admin_init', function () {
+	foreach ( ts_dl_post_types() as $pt ) {
+		add_filter( "manage_edit-{$pt}_columns", 'ts_dl_add_hits_column' );
+		add_filter( "manage_edit-{$pt}_sortable_columns", 'ts_dl_sortable_hits_column' );
+		add_action( "manage_{$pt}_posts_custom_column", 'ts_dl_render_hits_column', 10, 2 );
+	}
+} );
+
+// Make the Downloads column sort by the stored count.
+add_action( 'pre_get_posts', function ( $query ) {
+	if ( ! is_admin() || ! $query->is_main_query() ) {
+		return;
+	}
+	if ( 'ts_dl_hits' === $query->get( 'orderby' ) ) {
+		$query->set( 'meta_key', 'ts_dl_hits' );
+		$query->set( 'orderby', 'meta_value_num' );
+	}
+} );
