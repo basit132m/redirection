@@ -2,14 +2,14 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.0
+ * Version: 3.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.0' );
+define( 'TS_DL_VERSION', '3.1' );
 
 /* ==========================================================
  * SETTINGS
@@ -393,12 +393,17 @@ function ts_dl_render_button( $post_id ) {
 		return ts_dl_render_inline_fallback( $links );
 	}
 
+	// Nintendo Switch icon (inline SVG, inherits the button's text color).
+	$nintendo_icon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false">'
+		. '<path d="M9 2H6.6A4.6 4.6 0 0 0 2 6.6v10.8A4.6 4.6 0 0 0 6.6 22H9V2zM6.75 8.3a1.65 1.65 0 1 1 0-3.3 1.65 1.65 0 0 1 0 3.3z"/>'
+		. '<path d="M17.4 2H15v20h2.4a4.6 4.6 0 0 0 4.6-4.6V6.6A4.6 4.6 0 0 0 17.4 2zm-.15 16.95a1.65 1.65 0 1 1 0-3.3 1.65 1.65 0 0 1 0 3.3z"/>'
+		. '</svg>';
+
 	ob_start();
 	?>
-	<div id="ts-downloads" class="ts-dl-box">
-		<div class="ts-dl-header"><span class="ts-dl-icon">&#8681;</span><span>Download</span></div>
+	<div id="ts-downloads" class="ts-dl-wrap">
 		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" rel="nofollow noopener">
-			<span class="ts-dl-getnow-icon">&#8681;</span>
+			<span class="ts-dl-getnow-icon"><?php echo $nintendo_icon; // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?></span>
 			<?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?>
 		</a>
 	</div>
@@ -458,10 +463,13 @@ function ts_dl_styles() {
 	.ts-dl-box{background:#fff;border:1px solid #e5e5e5;border-radius:14px;padding:24px 28px;color:#1a1a1a;max-width:700px;margin:20px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);}
 	.ts-dl-header{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px;margin-bottom:14px;color:#1a1a1a;}
 	.ts-dl-icon{color:#e8394c;}
-	.ts-dl-getnow{display:inline-flex;align-items:center;gap:10px;background:#e8394c;color:#fff;font-weight:700;font-size:16px;text-decoration:none;padding:14px 32px;border-radius:10px;transition:background .2s,transform .05s;}
+	.ts-dl-wrap{text-align:center;margin:24px auto;}
+	.ts-dl-getnow{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:#e8394c;color:#fff;font-weight:700;font-size:16px;text-decoration:none;padding:16px 56px;min-width:320px;border-radius:12px;transition:background .2s,transform .05s;}
 	.ts-dl-getnow:hover{background:#cf2a3c;color:#fff;}
 	.ts-dl-getnow:active{transform:translateY(1px);}
-	.ts-dl-getnow-icon{font-size:18px;}
+	.ts-dl-getnow-icon{display:inline-flex;align-items:center;}
+	.ts-dl-getnow-icon svg{width:20px;height:20px;display:block;}
+	@media (max-width:480px){ .ts-dl-getnow{min-width:0;width:100%;padding:16px 24px;} }
 	.ts-dl-list{display:flex;flex-direction:column;gap:12px;}
 	.ts-dl-btn{display:flex;justify-content:space-between;align-items:center;background:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:14px 18px;text-decoration:none;transition:border-color .2s,background .2s;}
 	.ts-dl-btn:hover{background:#f0f0f0;border-color:#e8394c;}
