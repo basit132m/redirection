@@ -114,6 +114,9 @@ $title   = $data ? $data['title'] : 'Download';
 $version = $data && ! empty( $data['version'] ) ? $data['version'] : '';
 $tsize   = $data && ! empty( $data['size'] ) ? $data['size'] : '';
 $files   = $data ? (int) $data['files'] : 0;
+$image    = $data && ! empty( $data['image'] ) ? $data['image'] : '';
+$genre    = $data && ! empty( $data['genre'] ) ? $data['genre'] : '';
+$title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 ?>
 <!doctype html>
 <html lang="en">
@@ -130,10 +133,18 @@ $files   = $data ? (int) $data['files'] : 0;
 	body{ background:#ffffff; color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.5; }
 	.wrap{ max-width:760px; margin:0 auto; padding:28px 18px 60px; }
 
-	.head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:26px; }
-	.head h1{ font-size:22px; margin:0; font-weight:800; }
-	.head h1 .tag{ color:var(--red); }
-	.head .meta{ width:100%; color:var(--muted); font-size:13px; margin-top:4px; display:flex; gap:14px; flex-wrap:wrap; }
+	/* Game info card: featured image + details */
+	.ginfo{ display:flex; gap:22px; align-items:flex-start; border:1px solid var(--line); border-radius:16px; padding:20px 22px; margin-bottom:26px; background:var(--card); }
+	.ginfo-img{ flex:0 0 auto; width:210px; max-width:42%; }
+	.ginfo-img img{ width:100%; height:auto; border-radius:12px; display:block; }
+	.ginfo-meta{ flex:1; min-width:0; }
+	.ginfo-meta h1{ font-size:22px; margin:0 0 14px; font-weight:800; }
+	.ginfo-meta ul{ list-style:none; margin:0; padding:0; }
+	.ginfo-meta li{ display:flex; justify-content:space-between; gap:14px; padding:9px 0; border-bottom:1px solid var(--line); }
+	.ginfo-meta li:last-child{ border-bottom:0; }
+	.ginfo-meta li > span{ color:var(--muted); font-size:14px; }
+	.ginfo-meta li > strong{ font-size:14px; text-align:right; word-break:break-word; }
+	@media (max-width:600px){ .ginfo{ flex-direction:column; } .ginfo-img{ width:100%; max-width:100%; } }
 
 	/* Timer card */
 	.timer{ text-align:center; border:1px solid var(--line); border-radius:16px; padding:34px 20px; margin-bottom:26px; background:var(--card); }
@@ -169,12 +180,19 @@ $files   = $data ? (int) $data['files'] : 0;
 		<div class="err"><?php echo htmlspecialchars( $error, ENT_QUOTES ); ?></div>
 	<?php else : ?>
 
-		<div class="head">
-			<h1><?php echo htmlspecialchars( $title, ENT_QUOTES ); ?></h1>
-			<div class="meta">
-				<?php if ( $version ) : ?><span>Version: <?php echo htmlspecialchars( $version, ENT_QUOTES ); ?></span><?php endif; ?>
-				<?php if ( $tsize ) : ?><span>Size: <?php echo htmlspecialchars( $tsize, ENT_QUOTES ); ?></span><?php endif; ?>
-				<span><?php echo (int) $files; ?> file<?php echo 1 === $files ? '' : 's'; ?></span>
+		<div class="ginfo">
+			<?php if ( $image ) : ?>
+				<div class="ginfo-img"><img src="<?php echo htmlspecialchars( $image, ENT_QUOTES ); ?>" alt="<?php echo htmlspecialchars( $title, ENT_QUOTES ); ?>"></div>
+			<?php endif; ?>
+			<div class="ginfo-meta">
+				<h1><?php echo htmlspecialchars( $title, ENT_QUOTES ); ?></h1>
+				<ul>
+					<?php if ( $genre ) : ?><li><span>Genre</span><strong><?php echo htmlspecialchars( $genre, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $tsize ) : ?><li><span>Game Size</span><strong><?php echo htmlspecialchars( $tsize, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $version ) : ?><li><span>Version</span><strong><?php echo htmlspecialchars( $version, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $title_id ) : ?><li><span>Title ID</span><strong><?php echo htmlspecialchars( $title_id, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<li><span>Files</span><strong><?php echo (int) $files; ?></strong></li>
+				</ul>
 			</div>
 		</div>
 

@@ -2,14 +2,14 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.3
+ * Version: 3.4
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.3' );
+define( 'TS_DL_VERSION', '3.4' );
 
 /* ==========================================================
  * SETTINGS
@@ -457,56 +457,8 @@ function ts_dl_render_inline_fallback( $links ) {
 	return ob_get_clean();
 }
 
-/**
- * Render the "Game Information" box: featured image + Genre, Game Size,
- * Version and Title ID. Shown at the top of the game post.
- */
-function ts_dl_render_game_info( $post_id ) {
-	$genre    = get_post_meta( $post_id, 'ts_dl_genre', true );
-	$version  = get_post_meta( $post_id, 'ts_dl_version', true );
-	$size     = get_post_meta( $post_id, 'ts_dl_total_size', true );
-	$title_id = get_post_meta( $post_id, 'ts_dl_title_id', true );
-	$has_img  = has_post_thumbnail( $post_id );
-
-	// Nothing to show at all.
-	if ( ! $has_img && ! $genre && ! $version && ! $size && ! $title_id ) {
-		return '';
-	}
-
-	$rows = array(
-		'Genre'     => $genre,
-		'Game Size' => $size,
-		'Version'   => $version,
-		'Title ID'  => $title_id,
-	);
-
-	ob_start();
-	?>
-	<div class="ts-gameinfo">
-		<?php if ( $has_img ) : ?>
-			<div class="ts-gameinfo-img"><?php echo get_the_post_thumbnail( $post_id, 'medium', array( 'alt' => esc_attr( get_the_title( $post_id ) ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?></div>
-		<?php endif; ?>
-		<div class="ts-gameinfo-meta">
-			<h3 class="ts-gameinfo-title">Game Information</h3>
-			<ul>
-				<?php foreach ( $rows as $label => $value ) : ?>
-					<?php if ( '' !== trim( (string) $value ) ) : ?>
-						<li><span><?php echo esc_html( $label ); ?></span><strong><?php echo esc_html( $value ); ?></strong></li>
-					<?php endif; ?>
-				<?php endforeach; ?>
-			</ul>
-		</div>
-	</div>
-	<?php
-	return ob_get_clean();
-}
-
 add_filter( 'the_content', function ( $content ) {
 	if ( is_singular( ts_dl_post_types() ) && is_main_query() && in_the_loop() ) {
-		$info = ts_dl_render_game_info( get_the_ID() );
-		if ( $info ) {
-			$content = $info . $content;
-		}
 		$box = ts_dl_render_button( get_the_ID() );
 		if ( $box ) {
 			$content .= $box;
@@ -525,17 +477,6 @@ add_shortcode( 'download_box', function () {
 function ts_dl_styles() {
 	?>
 	<style>
-	.ts-gameinfo{display:flex;gap:22px;align-items:flex-start;background:#fff;border:1px solid #e5e5e5;border-radius:14px;padding:20px 22px;margin:0 0 24px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
-	.ts-gameinfo-img{flex:0 0 auto;width:220px;max-width:40%;}
-	.ts-gameinfo-img img{width:100%;height:auto;border-radius:10px;display:block;}
-	.ts-gameinfo-meta{flex:1;min-width:0;}
-	.ts-gameinfo-title{margin:0 0 12px;font-size:18px;font-weight:800;color:#1a1a1a;}
-	.ts-gameinfo-meta ul{list-style:none;margin:0;padding:0;}
-	.ts-gameinfo-meta li{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid #f0f0f0;}
-	.ts-gameinfo-meta li:last-child{border-bottom:0;}
-	.ts-gameinfo-meta li>span{color:#6b7280;font-size:14px;}
-	.ts-gameinfo-meta li>strong{color:#1a1a1a;font-size:14px;text-align:right;word-break:break-word;}
-	@media (max-width:600px){ .ts-gameinfo{flex-direction:column;} .ts-gameinfo-img{width:100%;max-width:100%;} }
 	#ts-downloads{scroll-margin-top:80px;}
 	.ts-dl-box{background:#fff;border:1px solid #e5e5e5;border-radius:14px;padding:24px 28px;color:#1a1a1a;max-width:700px;margin:20px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);}
 	.ts-dl-header{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px;margin-bottom:14px;color:#1a1a1a;}
