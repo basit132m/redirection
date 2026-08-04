@@ -5,7 +5,7 @@
  *              and a thumbnail filmstrip at the bottom with the active shot highlighted.
  *              Critical grid layout is set via inline styles so theme CSS and CSS optimizers
  *              (LiteSpeed / Autoptimize) cannot override or strip it.
- * Version: 4.0
+ * Version: 4.1
  */
 
 if ( ! defined('ABSPATH') ) exit;
@@ -438,9 +438,11 @@ add_action('wp_head', function() {
     #ts-ss-lb-close{position:absolute;top:18px;right:22px;z-index:3;width:46px;height:46px;border:none;border-radius:50%;background:#fff;color:#111;font-size:28px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:transform .15s ease,background .15s ease;}
     #ts-ss-lb-close:hover{background:#f1f1f1;transform:scale(1.06);}
 
-    .ts-ss-lb-stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;padding:64px 22px 12px;}
-    .ts-ss-lb-figure{margin:0;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:100%;}
-    #ts-ss-lb-img{display:block;max-width:min(1280px,90vw);max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+    /* overflow:hidden guarantees the image can never spill over the filmstrip */
+    .ts-ss-lb-stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;overflow:hidden;padding:70px 96px 14px;}
+    /* White frame around the shot, like Nintendo's viewer */
+    .ts-ss-lb-figure{margin:0;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:100%;min-height:0;background:#fff;padding:8px;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.55);}
+    #ts-ss-lb-img{display:block;max-width:min(1120px,84vw);max-height:calc(100vh - 285px);width:auto;height:auto;object-fit:contain;border-radius:5px;}
 
     .ts-ss-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:56px;height:56px;border:none;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s ease,transform .15s ease;}
     .ts-ss-lb-nav:hover{background:rgba(255,255,255,.3);}
@@ -461,8 +463,9 @@ add_action('wp_head', function() {
     .ts-ss-strip-arrow:hover{background:rgba(255,255,255,.3);}
 
     @media (max-width:782px){
-        .ts-ss-lb-stage{padding:58px 6px 8px;}
-        #ts-ss-lb-img{max-width:96vw;}
+        .ts-ss-lb-stage{padding:58px 8px 10px;}
+        .ts-ss-lb-figure{padding:5px;border-radius:9px;}
+        #ts-ss-lb-img{max-width:94vw;max-height:calc(100vh - 235px);}
         .ts-ss-lb-nav{width:44px;height:44px;background:rgba(0,0,0,.45);}
         .ts-ss-lb-prev{left:8px;}
         .ts-ss-lb-next{right:8px;}
