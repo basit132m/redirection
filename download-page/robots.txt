@@ -1,0 +1,4 @@
+# nspsitex.site is a utility download/redirect domain.
+# It should never appear in search engines. Block all crawling.
+User-agent: *
+Disallow: /
