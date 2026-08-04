@@ -15,10 +15,11 @@
  * ---------------------------------------------------------------------------
  */
 $ALLOWED_SOURCES = array(
-	'repacklabs' => 'https://repacklabs.net',
-	'nspvault'   => 'https://nspvault.me',   // adjust / remove as needed
+	'nspvault' => 'https://www.nspvault.com',
+	// Add more sites here if this same download.php serves them, e.g.
+	// 'repacklabs' => 'https://repacklabs.net',
 );
-$DEFAULT_SOURCE = 'repacklabs';
+$DEFAULT_SOURCE = 'nspvault';
 
 // Seconds the timer bar runs before links are revealed.
 $TIMER_SECONDS = 10;
