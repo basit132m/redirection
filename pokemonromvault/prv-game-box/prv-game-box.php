@@ -6,14 +6,14 @@
  *              Official Site. Download links are managed in a repeatable metabox and the download
  *              button can point at an external download page (configurable in Settings). Includes a
  *              per-post download counter and a [top_roms] popularity shortcode.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PRV_VERSION', '1.0' );
+define( 'PRV_VERSION', '1.1' );
 
 // Ignore repeat clicks from the same visitor within this many seconds.
 if ( ! defined( 'PRV_HIT_DEDUPE_SECONDS' ) ) {
@@ -537,23 +537,25 @@ add_action( 'pre_get_posts', function ( $q ) {
 add_action( 'wp_head', function () {
 	?>
 	<style id="prv-styles">
-	.prv-card{display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid #e8e8ea;border-radius:16px;padding:22px 24px;margin:0 0 26px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
+	/* Brand: Pokemon yellow. Dark text is used on the yellow because white is
+	   unreadable on it; links use a darker gold so they pass contrast on white. */
+	.prv-card{--prv-brand:#FFCD0A;--prv-brand-dark:#EBBD00;--prv-ink:#1a1a1a;--prv-link:#8a6800;display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid #e8e8ea;border-radius:16px;padding:22px 24px;margin:0 0 26px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
 	.prv-media{flex:0 0 auto;width:280px;max-width:42%;display:flex;flex-direction:column;gap:14px;}
 	.prv-img img{width:100%;height:auto;border-radius:12px;display:block;}
-	.prv-dlbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:#e8394c;color:#fff;font-weight:700;font-size:16px;text-decoration:none;padding:14px 20px;border-radius:12px;transition:background .2s,transform .05s;}
-	.prv-dlbtn:hover{background:#cf2a3c;color:#fff;}
+	.prv-dlbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--prv-brand);color:var(--prv-ink);font-weight:800;font-size:16px;text-decoration:none;padding:14px 20px;border-radius:12px;transition:background .2s,transform .05s;}
+	.prv-dlbtn:hover{background:var(--prv-brand-dark);color:var(--prv-ink);}
 	.prv-dlbtn:active{transform:translateY(1px);}
 	.prv-dlbtn-ic{font-size:18px;}
-	.prv-count{display:inline-flex;align-items:center;background:rgba(255,255,255,.22);color:#fff;font-weight:700;font-size:12px;line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;}
+	.prv-count{display:inline-flex;align-items:center;background:rgba(0,0,0,.12);color:var(--prv-ink);font-weight:800;font-size:12px;line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;}
 	.prv-info{flex:1;min-width:0;}
 	.prv-info-h{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-size:19px;font-weight:800;color:#101828;}
-	.prv-bar{display:inline-block;width:4px;height:20px;background:#e8394c;border-radius:2px;flex:0 0 4px;}
+	.prv-bar{display:inline-block;width:5px;height:20px;background:var(--prv-brand);border-radius:2px;flex:0 0 5px;}
 	.prv-dl{margin:0;padding:0;}
 	.prv-dl-row{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid #f0f0f2;}
 	.prv-dl-row:last-child{border-bottom:0;}
 	.prv-dl dt{flex:0 0 130px;color:#6b7280;font-size:14px;font-weight:600;margin:0;}
 	.prv-dl dd{flex:1;margin:0;color:#1a1a1a;font-size:14px;font-weight:600;word-break:break-word;}
-	.prv-dl dd a{color:#b81d2f;text-decoration:none;}
+	.prv-dl dd a{color:var(--prv-link);text-decoration:none;}
 	.prv-dl dd a:hover{text-decoration:underline;}
 	@media (max-width:640px){
 		.prv-card{flex-direction:column;}
