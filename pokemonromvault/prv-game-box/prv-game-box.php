@@ -6,14 +6,14 @@
  *              Official Site. Download links are managed in a repeatable metabox and the download
  *              button can point at an external download page (configurable in Settings). Includes a
  *              per-post download counter and a [top_roms] popularity shortcode.
- * Version: 1.1
+ * Version: 1.2
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PRV_VERSION', '1.1' );
+define( 'PRV_VERSION', '1.2' );
 
 // Ignore repeat clicks from the same visitor within this many seconds.
 if ( ! defined( 'PRV_HIT_DEDUPE_SECONDS' ) ) {
@@ -335,14 +335,9 @@ function prv_render_card( $post_id ) {
 			<?php endif; ?>
 
 			<?php if ( '' !== $target['url'] ) : ?>
-				<a class="prv-dlbtn"
-					href="<?php echo esc_url( $target['url'] ); ?>"
-					<?php echo $target['external'] ? '' : 'target="_blank"'; ?>
-					rel="nofollow noopener"
-					data-prv-hit="<?php echo esc_url( $hit_url ); ?>">
+				<a class="prv-dlbtn prv-scroll" href="#prv-dl-bottom">
 					<span class="prv-dlbtn-ic">&#8681;</span>
 					<?php echo esc_html( $s['button_text'] ?: 'Download' ); ?>
-					<span class="prv-count" data-count="<?php echo esc_attr( $hits ); ?>" title="Total downloads">&#8681;&nbsp;<span class="prv-count-n"><?php echo esc_html( number_format_i18n( $hits ) ); ?></span></span>
 				</a>
 			<?php endif; ?>
 		</div>
@@ -378,11 +373,47 @@ function prv_render_card( $post_id ) {
 	return ob_get_clean();
 }
 
+/**
+ * The real download button, shown at the very bottom of the post. This is the
+ * one that carries the download counter and records the click. The button in
+ * the info card up top just scrolls the reader down to this.
+ */
+function prv_render_bottom( $post_id ) {
+	$target = prv_download_href( $post_id );
+	if ( '' === $target['url'] ) {
+		return '';
+	}
+
+	$s       = prv_get_settings();
+	$hits    = (int) get_post_meta( $post_id, 'prv_hits', true );
+	$hit_url = rest_url( 'prv/v1/hit/' . $post_id );
+
+	ob_start();
+	?>
+	<div class="prv-bottom" id="prv-dl-bottom">
+		<a class="prv-dlbtn prv-dlbtn-main"
+			href="<?php echo esc_url( $target['url'] ); ?>"
+			<?php echo $target['external'] ? '' : 'target="_blank"'; ?>
+			rel="nofollow noopener"
+			data-prv-hit="<?php echo esc_url( $hit_url ); ?>">
+			<span class="prv-dlbtn-ic">&#8681;</span>
+			<?php echo esc_html( $s['button_text'] ?: 'Download' ); ?>
+			<span class="prv-count" data-count="<?php echo esc_attr( $hits ); ?>" title="Total downloads">&#8681;&nbsp;<span class="prv-count-n"><?php echo esc_html( number_format_i18n( $hits ) ); ?></span></span>
+		</a>
+	</div>
+	<?php
+	return ob_get_clean();
+}
+
 add_filter( 'the_content', function ( $content ) {
 	if ( is_singular( prv_post_types() ) && is_main_query() && in_the_loop() ) {
 		$card = prv_render_card( get_the_ID() );
 		if ( $card ) {
 			$content = $card . $content;
+		}
+		$bottom = prv_render_bottom( get_the_ID() );
+		if ( $bottom ) {
+			$content .= $bottom;
 		}
 	}
 	return $content;
@@ -479,7 +510,18 @@ add_action( 'wp_footer', function () {
 	?>
 	<script id="prv-hit-js">
 	(function(){
-		var btn = document.querySelector('.prv-dlbtn[data-prv-hit]');
+		// Top button smoothly scrolls down to the real download button.
+		var scrollBtn = document.querySelector('.prv-scroll');
+		var bottom = document.getElementById('prv-dl-bottom');
+		if (scrollBtn && bottom) {
+			scrollBtn.addEventListener('click', function(e){
+				e.preventDefault();
+				bottom.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			});
+		}
+
+		// The bottom button carries the counter and records the click.
+		var btn = document.querySelector('.prv-dlbtn-main[data-prv-hit]');
 		if(!btn) return;
 		var url = btn.getAttribute('data-prv-hit');
 		var badge = btn.querySelector('.prv-count');
@@ -538,15 +580,21 @@ add_action( 'wp_head', function () {
 	?>
 	<style id="prv-styles">
 	/* Brand: Pokemon yellow. Dark text is used on the yellow because white is
-	   unreadable on it; links use a darker gold so they pass contrast on white. */
-	.prv-card{--prv-brand:#FFCD0A;--prv-brand-dark:#EBBD00;--prv-ink:#1a1a1a;--prv-link:#8a6800;display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid #e8e8ea;border-radius:16px;padding:22px 24px;margin:0 0 26px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
-	.prv-media{flex:0 0 auto;width:280px;max-width:42%;display:flex;flex-direction:column;gap:14px;}
-	.prv-img img{width:100%;height:auto;border-radius:12px;display:block;}
-	.prv-dlbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--prv-brand);color:var(--prv-ink);font-weight:800;font-size:16px;text-decoration:none;padding:14px 20px;border-radius:12px;transition:background .2s,transform .05s;}
+	   unreadable on it; links use a darker gold so they pass contrast on white.
+	   The palette lives on both the card and the bottom button because the
+	   bottom button is rendered outside the card. */
+	.prv-card,.prv-bottom{--prv-brand:#FFCD0A;--prv-brand-dark:#EBBD00;--prv-ink:#1a1a1a;--prv-link:#8a6800;}
+	.prv-card{display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid #e8e8ea;border-radius:16px;padding:22px 24px;margin:0 0 26px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
+	.prv-media{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:14px;}
+	/* Fixed box-art size, per request. */
+	.prv-img img{width:200px;height:326px;object-fit:cover;border-radius:12px;display:block;}
+	.prv-dlbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--prv-brand);color:var(--prv-ink);font-weight:800;font-size:18px;text-decoration:none;padding:15px 32px;border-radius:12px;white-space:nowrap;transition:background .2s,transform .05s;}
 	.prv-dlbtn:hover{background:var(--prv-brand-dark);color:var(--prv-ink);}
 	.prv-dlbtn:active{transform:translateY(1px);}
-	.prv-dlbtn-ic{font-size:18px;}
-	.prv-count{display:inline-flex;align-items:center;background:rgba(0,0,0,.12);color:var(--prv-ink);font-weight:800;font-size:12px;line-height:1;padding:4px 8px;border-radius:999px;white-space:nowrap;}
+	.prv-dlbtn-ic{font-size:20px;}
+	.prv-count{display:inline-flex;align-items:center;background:rgba(0,0,0,.12);color:var(--prv-ink);font-weight:800;font-size:13px;line-height:1;padding:5px 9px;border-radius:999px;white-space:nowrap;}
+	.prv-bottom{text-align:center;margin:28px 0 6px;scroll-margin-top:90px;}
+	.prv-dlbtn-main{min-width:300px;}
 	.prv-info{flex:1;min-width:0;}
 	.prv-info-h{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-size:19px;font-weight:800;color:#101828;}
 	.prv-bar{display:inline-block;width:5px;height:20px;background:var(--prv-brand);border-radius:2px;flex:0 0 5px;}
@@ -559,8 +607,9 @@ add_action( 'wp_head', function () {
 	.prv-dl dd a:hover{text-decoration:underline;}
 	@media (max-width:640px){
 		.prv-card{flex-direction:column;}
-		.prv-media{width:100%;max-width:100%;}
-		.prv-dlbtn{width:100%;}
+		.prv-media{align-self:center;}
+		.prv-info{width:100%;}
+		.prv-dlbtn-main{min-width:0;width:100%;max-width:360px;}
 		.prv-dl dt{flex-basis:110px;}
 	}
 	</style>
