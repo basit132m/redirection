@@ -4,7 +4,7 @@
  * Description: Adds editable content above and below the latest-posts list on the homepage, without
  *              switching to a static front page. Edit it under Settings -> Homepage Content.
  *              Shortcodes are supported, so [top_roms] / [az_roms] can be embedded.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -366,7 +366,19 @@ function ts_home_styles() {
 	$done = true;
 	?>
 	<style id="ts-home-styles">
-	.ts-home-block{max-width:100%;margin:0 0 26px;color:#1a1a1a;line-height:1.65;}
+	/* The blocks are injected inside the theme's post loop, whose container is
+	   often a CSS grid or flexbox. Without this the block becomes a single
+	   grid/flex cell and collapses into a narrow one-column strip. Forcing it to
+	   span the full row makes it a full-width, centered horizontal band at the
+	   top and bottom of the post list. */
+	.ts-home-block{
+		grid-column:1 / -1;   /* span every column when the parent is a grid   */
+		flex-basis:100%;      /* take a whole row when the parent is a flexbox */
+		align-self:stretch;
+		width:100%;
+		box-sizing:border-box;
+		max-width:100%;margin:0 0 26px;color:#1a1a1a;line-height:1.65;
+	}
 	.ts-home-block.ts-home-bottom{margin:34px 0 0;}
 	.ts-home-block.is-boxed{background:#fff;border:1px solid #e8e8ea;border-radius:14px;padding:22px 26px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
 	.ts-home-block h1,.ts-home-block h2,.ts-home-block h3{margin:0 0 12px;line-height:1.3;color:#101828;}
