@@ -30,6 +30,8 @@ function ts_dl_default_settings() {
 		'source_id'         => '', // optional key so one download.php can serve several sites
 		'button_text'       => 'Get It Now',
 		'post_types'        => array( 'post', 'game' ),
+		// Small legal disclaimer shown under the download button. Empty = hidden.
+		'disclaimer'        => 'NSP Vault does not host any files on its servers. All game titles, trademarks and copyrights are the property of their respective owners. Please support the developers by purchasing the games you enjoy. Rights holders may request removal via our <a href="/dmca/" rel="nofollow">DMCA page</a>.',
 		// Where the download page reads each game-info value from.
 		// Empty = use this plugin's own field. A meta key = read that custom
 		// field. "tax:slug" = read the terms of that taxonomy (e.g. Genre).
@@ -111,6 +113,11 @@ function ts_dl_maybe_save_settings() {
 		$settings[ $mkey ] = isset( $_POST[ $mkey ] ) ? sanitize_text_field( wp_unslash( $_POST[ $mkey ] ) ) : '';
 	}
 
+	// Allow a little safe HTML (links) in the disclaimer.
+	$settings['disclaimer'] = isset( $_POST['disclaimer'] )
+		? wp_kses_post( wp_unslash( $_POST['disclaimer'] ) )
+		: '';
+
 	update_option( 'ts_dl_settings', $settings );
 
 	add_settings_error( 'ts_dl', 'saved', 'Settings saved.', 'updated' );
@@ -169,6 +176,13 @@ function ts_dl_settings_page_html() {
 					<th scope="row"><label for="button_text">Button text</label></th>
 					<td><input name="button_text" id="button_text" type="text" class="regular-text"
 						value="<?php echo esc_attr( $settings['button_text'] ); ?>" placeholder="Get It Now"></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="disclaimer">Disclaimer under button</label></th>
+					<td>
+						<textarea name="disclaimer" id="disclaimer" rows="3" class="large-text code"><?php echo esc_textarea( $settings['disclaimer'] ); ?></textarea>
+						<p class="description">Shown in small print directly below the download button. Basic HTML links are allowed. Leave blank to hide it. Update the <code>/dmca/</code> link if your DMCA page uses a different URL.</p>
+					</td>
 				</tr>
 				<tr>
 					<th scope="row">Show box on</th>
@@ -626,9 +640,25 @@ function ts_dl_render_button( $post_id ) {
 			<?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?>
 			<span class="ts-dl-count" data-count="<?php echo esc_attr( $hits ); ?>" title="Total downloads">&#8681;&nbsp;<span class="ts-dl-count-n"><?php echo esc_html( number_format_i18n( $hits ) ); ?></span></span>
 		</a>
+		<?php echo ts_dl_disclaimer_html(); // phpcs:ignore WordPress.Security.EscapeOutput -- sanitised via wp_kses_post ?>
 	</div>
 	<?php
 	return ob_get_clean();
+}
+
+/**
+ * Small legal disclaimer rendered under the download button.
+ *
+ * @return string
+ */
+function ts_dl_disclaimer_html() {
+	$settings = ts_dl_get_settings();
+	$text     = isset( $settings['disclaimer'] ) ? trim( $settings['disclaimer'] ) : '';
+	if ( '' === $text ) {
+		return '';
+	}
+	// Re-sanitise on output (settings could predate the kses save above).
+	return '<p class="ts-dl-disclaimer">' . wp_kses_post( $text ) . '</p>';
 }
 
 /**
@@ -654,6 +684,7 @@ function ts_dl_render_inline_fallback( $links ) {
 				</a>
 			<?php endforeach; ?>
 		</div>
+		<?php echo ts_dl_disclaimer_html(); // phpcs:ignore WordPress.Security.EscapeOutput -- sanitised via wp_kses_post ?>
 	</div>
 	<?php
 	return ob_get_clean();
@@ -729,6 +760,9 @@ function ts_dl_styles() {
 	.ts-dl-getnow-icon{display:inline-flex;align-items:center;}
 	.ts-dl-getnow-icon svg{width:20px;height:20px;display:block;}
 	.ts-dl-count{display:inline-flex;align-items:center;background:rgba(255,255,255,.22);color:#fff;font-weight:700;font-size:13px;line-height:1;padding:5px 10px;border-radius:999px;margin-left:2px;white-space:nowrap;}
+	.ts-dl-disclaimer{max-width:620px;margin:12px auto 0;color:#8a8f98;font-size:12px;line-height:1.5;text-align:center;}
+	.ts-dl-disclaimer a{color:#e8394c;text-decoration:none;}
+	.ts-dl-disclaimer a:hover{text-decoration:underline;}
 	@media (max-width:480px){ .ts-dl-getnow{min-width:0;width:100%;padding:16px 24px;} }
 	.ts-dl-list{display:flex;flex-direction:column;gap:12px;}
 	.ts-dl-btn{display:flex;justify-content:space-between;align-items:center;background:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:14px 18px;text-decoration:none;transition:border-color .2s,background .2s;}
