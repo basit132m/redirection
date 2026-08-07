@@ -2,14 +2,15 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.8
+ * Version: 3.9
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.8' );
+define( 'TS_DL_VERSION', '3.9' );
+define( 'TS_DL_DB_VERSION', '1.0' );
 
 // Ignore repeat clicks from the same visitor within this many seconds, so a
 // double-click or quick refresh does not inflate the download count.
@@ -17,10 +18,60 @@ if ( ! defined( 'TS_DL_HIT_DEDUPE_SECONDS' ) ) {
 	define( 'TS_DL_HIT_DEDUPE_SECONDS', 15 );
 }
 
-// A first "redirect" click is counted at most once per visitor within this
-// window, so the first-click metric stays unique (defaults to 30 days).
-if ( ! defined( 'TS_DL_REDIRECT_DEDUPE_SECONDS' ) ) {
-	define( 'TS_DL_REDIRECT_DEDUPE_SECONDS', 30 * DAY_IN_SECONDS );
+/* ==========================================================
+ * REDIRECT DAILY STATS — table + helpers
+ * ========================================================== */
+
+/**
+ * Daily redirect-clicks table name.
+ *
+ * @return string
+ */
+function ts_dl_redirect_table() {
+	global $wpdb;
+	return $wpdb->prefix . 'ts_dl_redirect_daily';
+}
+
+/**
+ * Create/upgrade the daily stats table.
+ */
+function ts_dl_install() {
+	global $wpdb;
+	$table           = ts_dl_redirect_table();
+	$charset_collate = $wpdb->get_charset_collate();
+
+	$sql = "CREATE TABLE {$table} (
+		day DATE NOT NULL,
+		clicks BIGINT UNSIGNED NOT NULL DEFAULT 0,
+		PRIMARY KEY  (day)
+	) {$charset_collate};";
+
+	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+	dbDelta( $sql );
+	update_option( 'ts_dl_db_version', TS_DL_DB_VERSION );
+}
+register_activation_hook( __FILE__, 'ts_dl_install' );
+
+add_action( 'plugins_loaded', function () {
+	if ( get_option( 'ts_dl_db_version' ) !== TS_DL_DB_VERSION ) {
+		ts_dl_install();
+	}
+} );
+
+/**
+ * Add one unique redirect click to today's tally.
+ */
+function ts_dl_redirect_bump_daily() {
+	global $wpdb;
+	$table = ts_dl_redirect_table();
+	$today = current_time( 'Y-m-d' );
+	$wpdb->query(
+		$wpdb->prepare(
+			"INSERT INTO {$table} (day, clicks) VALUES (%s, 1)
+			 ON DUPLICATE KEY UPDATE clicks = clicks + 1",
+			$today
+		)
+	);
 }
 
 /* ==========================================================
@@ -85,8 +136,101 @@ function ts_dl_admin_menu() {
 		'ts-download-box',
 		'ts_dl_settings_page_html'
 	);
+	add_management_page(
+		'Redirect Stats',
+		'Redirect Stats',
+		'manage_options',
+		'ts-dl-redirect-stats',
+		'ts_dl_redirect_stats_page'
+	);
 }
 add_action( 'admin_menu', 'ts_dl_admin_menu' );
+
+/**
+ * Tools -> Redirect Stats: unique custom-redirect clicks per day.
+ */
+function ts_dl_redirect_stats_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	global $wpdb;
+	$table = ts_dl_redirect_table();
+
+	$days = isset( $_GET['days'] ) ? max( 7, min( 365, (int) $_GET['days'] ) ) : 30;
+
+	// Pull the stored per-day rows for the window.
+	$since = gmdate( 'Y-m-d', current_time( 'timestamp' ) - ( $days - 1 ) * DAY_IN_SECONDS );
+	$rows  = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT day, clicks FROM {$table} WHERE day >= %s ORDER BY day ASC",
+			$since
+		),
+		OBJECT_K
+	);
+
+	$grand_total = (int) $wpdb->get_var( "SELECT COALESCE(SUM(clicks),0) FROM {$table}" );
+
+	// Build a continuous day-by-day series (fill gaps with 0), newest first.
+	$series = array();
+	$window_total = 0;
+	$max = 1;
+	for ( $i = 0; $i < $days; $i++ ) {
+		$d   = gmdate( 'Y-m-d', current_time( 'timestamp' ) - $i * DAY_IN_SECONDS );
+		$val = isset( $rows[ $d ] ) ? (int) $rows[ $d ]->clicks : 0;
+		$series[] = array( 'day' => $d, 'clicks' => $val );
+		$window_total += $val;
+		if ( $val > $max ) {
+			$max = $val;
+		}
+	}
+
+	$today_val = isset( $series[0] ) ? $series[0]['clicks'] : 0;
+	?>
+	<div class="wrap">
+		<h1>Redirect Stats</h1>
+		<p>Unique <strong>first-click redirects</strong> on the &ldquo;Get It Now&rdquo; button, counted once per visitor per day.</p>
+
+		<div style="display:flex;gap:16px;flex-wrap:wrap;margin:16px 0 22px;">
+			<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:14px 20px;min-width:150px;">
+				<div style="color:#646970;font-size:12px;text-transform:uppercase;letter-spacing:.4px;">Today</div>
+				<div style="font-size:26px;font-weight:700;color:#1d2327;"><?php echo esc_html( number_format_i18n( $today_val ) ); ?></div>
+			</div>
+			<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:14px 20px;min-width:150px;">
+				<div style="color:#646970;font-size:12px;text-transform:uppercase;letter-spacing:.4px;">Last <?php echo (int) $days; ?> days</div>
+				<div style="font-size:26px;font-weight:700;color:#1d2327;"><?php echo esc_html( number_format_i18n( $window_total ) ); ?></div>
+			</div>
+			<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:14px 20px;min-width:150px;">
+				<div style="color:#646970;font-size:12px;text-transform:uppercase;letter-spacing:.4px;">All time</div>
+				<div style="font-size:26px;font-weight:700;color:#e8394c;"><?php echo esc_html( number_format_i18n( $grand_total ) ); ?></div>
+			</div>
+		</div>
+
+		<p>
+			Range:
+			<?php foreach ( array( 7, 30, 90 ) as $opt ) : ?>
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=ts-dl-redirect-stats&days=' . $opt ) ); ?>"
+					class="button <?php echo $days === $opt ? 'button-primary' : ''; ?>"><?php echo (int) $opt; ?> days</a>
+			<?php endforeach; ?>
+		</p>
+
+		<table class="wp-list-table widefat fixed striped" style="max-width:640px;margin-top:12px;">
+			<thead><tr><th style="width:150px;">Date</th><th style="width:110px;">Unique redirects</th><th>Trend</th></tr></thead>
+			<tbody>
+				<?php foreach ( $series as $row ) :
+					$pct = $max > 0 ? round( $row['clicks'] / $max * 100 ) : 0; ?>
+					<tr>
+						<td><?php echo esc_html( mysql2date( 'D, M j, Y', $row['day'] ) ); ?></td>
+						<td><strong><?php echo esc_html( number_format_i18n( $row['clicks'] ) ); ?></strong></td>
+						<td>
+							<span style="display:inline-block;height:12px;border-radius:6px;background:#e8394c;width:<?php echo (int) $pct; ?>%;min-width:<?php echo $row['clicks'] > 0 ? '6' : '0'; ?>px;"></span>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+	</div>
+	<?php
+}
 
 /**
  * Save settings (own nonce-checked handler, kept simple & explicit).
@@ -648,8 +792,7 @@ add_action( 'rest_api_init', function () {
 
 /**
  * Read (GET) or record (POST) a first-click on the redirect link. Each visitor
- * is counted at most once (per IP + post) within TS_DL_REDIRECT_DEDUPE_SECONDS,
- * so the metric stays unique.
+ * is counted at most once per post per day, so the daily metric stays unique.
  */
 function ts_dl_rest_redirect( $request ) {
 	$id   = (int) $request['id'];
@@ -662,11 +805,15 @@ function ts_dl_rest_redirect( $request ) {
 	$clicks = (int) get_post_meta( $id, 'ts_dl_redirect_hits', true );
 
 	if ( 'POST' === $request->get_method() ) {
-		$dedupe_key = 'ts_dl_rdr_' . md5( ts_dl_client_ip() . '|' . $id );
+		// Unique per visitor per day per post: the daily report then counts each
+		// visitor once a day, and a refresh/double-click never inflates it.
+		$today      = current_time( 'Y-m-d' );
+		$dedupe_key = 'ts_dl_rdr_' . md5( ts_dl_client_ip() . '|' . $id . '|' . $today );
 		if ( ! get_transient( $dedupe_key ) ) {
 			++$clicks;
 			update_post_meta( $id, 'ts_dl_redirect_hits', $clicks );
-			set_transient( $dedupe_key, 1, TS_DL_REDIRECT_DEDUPE_SECONDS );
+			ts_dl_redirect_bump_daily();
+			set_transient( $dedupe_key, 1, DAY_IN_SECONDS );
 		}
 	}
 
