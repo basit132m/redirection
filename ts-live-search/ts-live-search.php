@@ -6,7 +6,7 @@
  *              admin list can be filtered by status and searched. Place the bar with the [live_search]
  *              shortcode, or let it auto-insert at the top of the homepage. Searches that return no results
  *              are flagged and the admin is notified with a count on the menu.
- * Version: 1.2
+ * Version: 1.3
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -88,7 +88,10 @@ function ts_ls_get_settings() {
  * @return array
  */
 function ts_ls_post_types() {
-	$types = get_post_types( array( 'public' => true, 'exclude_from_search' => false ), 'names' );
+	// Include every public/queryable type (games are usually a custom post type),
+	// so the count matches what the site's search page actually shows.
+	$types  = get_post_types( array( 'public' => true ), 'names' );
+	$types += get_post_types( array( 'publicly_queryable' => true ), 'names' );
 	unset( $types['attachment'] );
 	/**
 	 * Filter the searchable post types.
@@ -96,6 +99,21 @@ function ts_ls_post_types() {
 	 * @param array $types Post type names.
 	 */
 	return apply_filters( 'ts_ls_post_types', array_values( $types ) );
+}
+
+/**
+ * Run a search query, routing through Relevanssi when that plugin is active so
+ * the result count matches the site's real search behaviour.
+ *
+ * @param array $args WP_Query args (must include 's').
+ * @return WP_Query
+ */
+function ts_ls_search_query( $args ) {
+	$query = new WP_Query( $args );
+	if ( function_exists( 'relevanssi_do_query' ) ) {
+		relevanssi_do_query( $query );
+	}
+	return $query;
 }
 
 /* ==========================================================
@@ -279,7 +297,7 @@ function ts_ls_rest_query( $request ) {
 		return array( 'items' => array() );
 	}
 
-	$query = new WP_Query( array(
+	$query = ts_ls_search_query( array(
 		'post_type'           => ts_ls_post_types(),
 		'post_status'         => 'publish',
 		's'                   => $q,
@@ -310,7 +328,7 @@ function ts_ls_rest_query( $request ) {
  * @return int
  */
 function ts_ls_count_results( $q ) {
-	$query = new WP_Query( array(
+	$query = ts_ls_search_query( array(
 		'post_type'           => ts_ls_post_types(),
 		'post_status'         => 'publish',
 		's'                   => $q,
@@ -320,6 +338,10 @@ function ts_ls_count_results( $q ) {
 		'ignore_sticky_posts' => true,
 	) );
 	$n = (int) $query->found_posts;
+	// Relevanssi reports its total on found_posts, but fall back to the row count.
+	if ( 0 === $n && ! empty( $query->posts ) ) {
+		$n = count( $query->posts );
+	}
 	wp_reset_postdata();
 	return $n;
 }
@@ -435,6 +457,26 @@ add_action( 'admin_init', function () {
 			$wpdb->update( $table, array( 'written' => $val ), array( 'id' => $id ), array( '%d' ), array( '%d' ) );
 		}
 		set_transient( 'ts_ls_admin_notice', 'Saved.', 30 );
+		wp_safe_redirect( ts_ls_admin_redirect() );
+		exit;
+	}
+
+	// Recompute the result count for every stored keyword (fixes rows logged
+	// before the counter existed, or after adding new content).
+	if ( isset( $_POST['ts_ls_recheck'] ) && check_admin_referer( 'ts_ls_recheck' ) ) {
+		global $wpdb;
+		$table = ts_ls_table();
+		$rows  = $wpdb->get_results( "SELECT id, keyword FROM {$table}" );
+		foreach ( $rows as $row ) {
+			$wpdb->update(
+				$table,
+				array( 'results' => ts_ls_count_results( $row->keyword ) ),
+				array( 'id' => (int) $row->id ),
+				array( '%d' ),
+				array( '%d' )
+			);
+		}
+		set_transient( 'ts_ls_admin_notice', 'Result counts rechecked for all keywords.', 30 );
 		wp_safe_redirect( ts_ls_admin_redirect() );
 		exit;
 	}
@@ -557,6 +599,12 @@ function ts_ls_admin_page() {
 				<option value="keyword" <?php selected( 'keyword', $orderby ); ?>>A → Z</option>
 			</select>
 			<button class="button">Filter</button>
+		</form>
+
+		<form method="post" action="<?php echo esc_url( ts_ls_admin_redirect() ); ?>" style="display:inline-block;margin:0 0 14px;">
+			<?php wp_nonce_field( 'ts_ls_recheck' ); ?>
+			<input type="hidden" name="ts_ls_recheck" value="1">
+			<button class="button" title="Recompute how many posts each keyword matches (use after adding content or updating this plugin)">↻ Recheck result counts</button>
 		</form>
 
 		<form method="post" action="<?php echo esc_url( ts_ls_admin_redirect() ); ?>">
