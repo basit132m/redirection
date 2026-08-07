@@ -2,19 +2,25 @@
 /**
  * Plugin Name: TS Download Box
  * Description: Adds download links to a game/post via a repeatable metabox. On the public page it shows a single "Get It Now" button that sends visitors to an external download page. Exposes the links via a REST endpoint so the external page can display them. The external download-page domain is configurable in Settings.
- * Version: 3.7
+ * Version: 3.8
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_DL_VERSION', '3.7' );
+define( 'TS_DL_VERSION', '3.8' );
 
 // Ignore repeat clicks from the same visitor within this many seconds, so a
 // double-click or quick refresh does not inflate the download count.
 if ( ! defined( 'TS_DL_HIT_DEDUPE_SECONDS' ) ) {
 	define( 'TS_DL_HIT_DEDUPE_SECONDS', 15 );
+}
+
+// A first "redirect" click is counted at most once per visitor within this
+// window, so the first-click metric stays unique (defaults to 30 days).
+if ( ! defined( 'TS_DL_REDIRECT_DEDUPE_SECONDS' ) ) {
+	define( 'TS_DL_REDIRECT_DEDUPE_SECONDS', 30 * DAY_IN_SECONDS );
 }
 
 /* ==========================================================
@@ -30,6 +36,11 @@ function ts_dl_default_settings() {
 		'source_id'         => '', // optional key so one download.php can serve several sites
 		'button_text'       => 'Get It Now',
 		'post_types'        => array( 'post', 'game' ),
+		// Optional first-click redirect. When set, the first click on "Get It Now"
+		// opens this URL in a new tab (recorded once per visitor) and the button
+		// then changes to redirect_text; the next click does the normal download.
+		'redirect_url'      => '',
+		'redirect_text'     => 'Click Again to Download',
 		// Small legal disclaimer shown under the download button. Empty = hidden.
 		'disclaimer'        => 'NSP Vault does not host any files on its servers. All game titles, trademarks and copyrights are the property of their respective owners. Please support the developers by purchasing the games you enjoy. Rights holders may request removal via our <a href="/dmca/" rel="nofollow">DMCA page</a>.',
 		// Where the download page reads each game-info value from.
@@ -102,6 +113,14 @@ function ts_dl_maybe_save_settings() {
 	$settings['button_text'] = isset( $_POST['button_text'] ) && '' !== trim( wp_unslash( $_POST['button_text'] ) )
 		? sanitize_text_field( wp_unslash( $_POST['button_text'] ) )
 		: 'Get It Now';
+
+	$settings['redirect_url'] = isset( $_POST['redirect_url'] )
+		? esc_url_raw( trim( wp_unslash( $_POST['redirect_url'] ) ) )
+		: '';
+
+	$settings['redirect_text'] = isset( $_POST['redirect_text'] ) && '' !== trim( wp_unslash( $_POST['redirect_text'] ) )
+		? sanitize_text_field( wp_unslash( $_POST['redirect_text'] ) )
+		: 'Click Again to Download';
 
 	$chosen = isset( $_POST['post_types'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['post_types'] ) ) : array();
 	$settings['post_types'] = array_values( array_filter( $chosen, 'post_type_exists' ) );
@@ -176,6 +195,19 @@ function ts_dl_settings_page_html() {
 					<th scope="row"><label for="button_text">Button text</label></th>
 					<td><input name="button_text" id="button_text" type="text" class="regular-text"
 						value="<?php echo esc_attr( $settings['button_text'] ); ?>" placeholder="Get It Now"></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="redirect_url">First-click redirect URL <span style="font-weight:400;color:#777;">(optional)</span></label></th>
+					<td>
+						<input name="redirect_url" id="redirect_url" type="url" class="regular-text code"
+							value="<?php echo esc_attr( $settings['redirect_url'] ); ?>" placeholder="https://example.com/your-link">
+						<p class="description">If set, the <strong>first</strong> click on the button opens this URL in a new tab (counted once per visitor). The button then changes to the text below, and the next click starts the normal download. Leave blank to keep the single-click behaviour.</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="redirect_text">Text after first click</label></th>
+					<td><input name="redirect_text" id="redirect_text" type="text" class="regular-text"
+						value="<?php echo esc_attr( $settings['redirect_text'] ); ?>" placeholder="Click Again to Download"></td>
 				</tr>
 				<tr>
 					<th scope="row"><label for="disclaimer">Disclaimer under button</label></th>
@@ -593,6 +625,58 @@ function ts_dl_rest_hit( $request ) {
 }
 
 /* ==========================================================
+ * 2c. REST ENDPOINT — first-click redirect counter (unique per visitor)
+ * ========================================================== */
+add_action( 'rest_api_init', function () {
+	register_rest_route(
+		'tsdl/v1',
+		'/redirect/(?P<id>\d+)',
+		array(
+			array(
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => 'ts_dl_rest_redirect',
+			),
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => 'ts_dl_rest_redirect',
+			),
+		)
+	);
+} );
+
+/**
+ * Read (GET) or record (POST) a first-click on the redirect link. Each visitor
+ * is counted at most once (per IP + post) within TS_DL_REDIRECT_DEDUPE_SECONDS,
+ * so the metric stays unique.
+ */
+function ts_dl_rest_redirect( $request ) {
+	$id   = (int) $request['id'];
+	$post = get_post( $id );
+
+	if ( ! $post || 'publish' !== $post->post_status ) {
+		return new WP_Error( 'not_found', 'Not found.', array( 'status' => 404 ) );
+	}
+
+	$clicks = (int) get_post_meta( $id, 'ts_dl_redirect_hits', true );
+
+	if ( 'POST' === $request->get_method() ) {
+		$dedupe_key = 'ts_dl_rdr_' . md5( ts_dl_client_ip() . '|' . $id );
+		if ( ! get_transient( $dedupe_key ) ) {
+			++$clicks;
+			update_post_meta( $id, 'ts_dl_redirect_hits', $clicks );
+			set_transient( $dedupe_key, 1, TS_DL_REDIRECT_DEDUPE_SECONDS );
+		}
+	}
+
+	return array(
+		'id'     => $id,
+		'clicks' => $clicks,
+	);
+}
+
+/* ==========================================================
  * 3. FRONTEND — single "Get It Now" button
  * ========================================================== */
 function ts_dl_get_download_page_link( $post_id ) {
@@ -629,15 +713,23 @@ function ts_dl_render_button( $post_id ) {
 		. '<path d="M17.4 2H15v20h2.4a4.6 4.6 0 0 0 4.6-4.6V6.6A4.6 4.6 0 0 0 17.4 2zm-.15 16.95a1.65 1.65 0 1 1 0-3.3 1.65 1.65 0 0 1 0 3.3z"/>'
 		. '</svg>';
 
-	$hits    = (int) get_post_meta( $post_id, 'ts_dl_hits', true );
-	$hit_url = rest_url( 'tsdl/v1/hit/' . $post_id );
+	$hits         = (int) get_post_meta( $post_id, 'ts_dl_hits', true );
+	$hit_url      = rest_url( 'tsdl/v1/hit/' . $post_id );
+	$redirect_url = trim( (string) $settings['redirect_url'] );
+	$redirect_hit = rest_url( 'tsdl/v1/redirect/' . $post_id );
 
 	ob_start();
 	?>
 	<div id="ts-downloads" class="ts-dl-wrap">
-		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" target="_blank" rel="nofollow noopener" data-ts-hit-url="<?php echo esc_url( $hit_url ); ?>">
+		<a href="<?php echo esc_url( $href ); ?>" class="ts-dl-getnow" target="_blank" rel="nofollow noopener"
+			data-ts-hit-url="<?php echo esc_url( $hit_url ); ?>"
+			<?php if ( '' !== $redirect_url ) : ?>
+			data-ts-redirect-url="<?php echo esc_url( $redirect_url ); ?>"
+			data-ts-redirect-hit="<?php echo esc_url( $redirect_hit ); ?>"
+			data-ts-redirect-text="<?php echo esc_attr( $settings['redirect_text'] ?: 'Click Again to Download' ); ?>"
+			<?php endif; ?>>
 			<span class="ts-dl-getnow-icon"><?php echo $nintendo_icon; // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?></span>
-			<?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?>
+			<span class="ts-dl-label"><?php echo esc_html( $settings['button_text'] ?: 'Get It Now' ); ?></span>
 			<span class="ts-dl-count" data-count="<?php echo esc_attr( $hits ); ?>" title="Total downloads">&#8681;&nbsp;<span class="ts-dl-count-n"><?php echo esc_html( number_format_i18n( $hits ) ); ?></span></span>
 		</a>
 		<?php echo ts_dl_disclaimer_html(); // phpcs:ignore WordPress.Security.EscapeOutput -- sanitised via wp_kses_post ?>
@@ -720,21 +812,46 @@ add_action( 'wp_footer', function () {
 		var url = btn.getAttribute('data-ts-hit-url');
 		var badge = btn.querySelector('.ts-dl-count');
 		var numEl = btn.querySelector('.ts-dl-count-n');
+		var labelEl = btn.querySelector('.ts-dl-label');
+
+		// First-click redirect (optional). When a redirect URL is set the first
+		// click opens it in a new tab and the button flips to the "click again"
+		// text; the second click then performs the normal download.
+		var redirectUrl  = btn.getAttribute('data-ts-redirect-url') || '';
+		var redirectHit  = btn.getAttribute('data-ts-redirect-hit') || '';
+		var redirectText = btn.getAttribute('data-ts-redirect-text') || 'Click Again to Download';
+		// stage 1 = still needs the redirect; stage 2 = ready to download.
+		var stage = redirectUrl ? 1 : 2;
+
 		function fmt(n){ try { return Number(n).toLocaleString(); } catch(e){ return String(n); } }
 		function setCount(n){ if(numEl){ numEl.textContent = fmt(n); } if(badge){ badge.setAttribute('data-count', n); } }
+		function beacon(u){
+			if(!u){ return; }
+			try {
+				if (navigator.sendBeacon) { navigator.sendBeacon(u); }
+				else { fetch(u, { method:'POST', keepalive:true }); }
+			} catch(e){}
+		}
 
-		// Live count so the number is fresh even behind a full-page cache.
+		// Live download count so the number is fresh even behind a full-page cache.
 		fetch(url, { headers: { 'Accept':'application/json' } })
 			.then(function(r){ return r.json(); })
 			.then(function(d){ if(d && typeof d.hits !== 'undefined'){ setCount(d.hits); } })
 			.catch(function(){});
 
-		// Record the click without delaying navigation.
-		btn.addEventListener('click', function(){
-			try {
-				if (navigator.sendBeacon) { navigator.sendBeacon(url); }
-				else { fetch(url, { method:'POST', keepalive:true }); }
-			} catch(e){}
+		btn.addEventListener('click', function(e){
+			if (stage === 1) {
+				// First click: don't follow the download link yet.
+				e.preventDefault();
+				beacon(redirectHit);                              // record once per visitor (server dedupes)
+				window.open(redirectUrl, '_blank', 'noopener');   // open the custom URL in a new tab
+				if (labelEl) { labelEl.textContent = redirectText; }
+				stage = 2;
+				return;
+			}
+			// Second click onward: normal behaviour — record the download hit and
+			// let the link open the download page (href, target=_blank).
+			beacon(url);
 			var current = parseInt((badge && badge.getAttribute('data-count')) || '0', 10) || 0;
 			setCount(current + 1); // optimistic bump for immediate feedback
 		});
@@ -780,12 +897,19 @@ add_action( 'wp_head', 'ts_dl_styles' );
  * ========================================================== */
 function ts_dl_add_hits_column( $columns ) {
 	$columns['ts_dl_hits'] = __( 'Downloads', 'ts-download-box' );
+	// Only show the first-click column when a redirect URL is configured.
+	$settings = ts_dl_get_settings();
+	if ( ! empty( $settings['redirect_url'] ) ) {
+		$columns['ts_dl_redirect_hits'] = __( 'First clicks', 'ts-download-box' );
+	}
 	return $columns;
 }
 
 function ts_dl_render_hits_column( $column, $post_id ) {
 	if ( 'ts_dl_hits' === $column ) {
 		echo esc_html( number_format_i18n( (int) get_post_meta( $post_id, 'ts_dl_hits', true ) ) );
+	} elseif ( 'ts_dl_redirect_hits' === $column ) {
+		echo esc_html( number_format_i18n( (int) get_post_meta( $post_id, 'ts_dl_redirect_hits', true ) ) );
 	}
 }
 
