@@ -4,8 +4,9 @@
  * Description: A live (instant) search bar for your posts, plus a keyword log in the admin. Every search is
  *              recorded and aggregated by keyword; each keyword can be marked as "Article written", and the
  *              admin list can be filtered by status and searched. Place the bar with the [live_search]
- *              shortcode, or let it auto-insert at the top of the homepage.
- * Version: 1.1
+ *              shortcode, or let it auto-insert at the top of the homepage. Searches that return no results
+ *              are flagged and the admin is notified with a count on the menu.
+ * Version: 1.2
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -13,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TS_LS_VERSION', '1.0' );
-define( 'TS_LS_DB_VERSION', '1.0' );
+define( 'TS_LS_DB_VERSION', '1.1' );
 
 /* ==========================================================
  * 0. DATABASE (keyword log table)
@@ -37,12 +38,14 @@ function ts_ls_install() {
 		keyword VARCHAR(191) NOT NULL,
 		hits BIGINT UNSIGNED NOT NULL DEFAULT 1,
 		written TINYINT(1) NOT NULL DEFAULT 0,
+		results BIGINT UNSIGNED NOT NULL DEFAULT 0,
 		last_searched DATETIME NOT NULL,
 		created_at DATETIME NOT NULL,
 		PRIMARY KEY  (id),
 		UNIQUE KEY keyword (keyword),
 		KEY written (written),
-		KEY hits (hits)
+		KEY hits (hits),
+		KEY results (results)
 	) {$charset_collate};";
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -301,6 +304,27 @@ function ts_ls_rest_query( $request ) {
 }
 
 /**
+ * Count how many published posts a keyword matches (what the search page shows).
+ *
+ * @param string $q Keyword.
+ * @return int
+ */
+function ts_ls_count_results( $q ) {
+	$query = new WP_Query( array(
+		'post_type'           => ts_ls_post_types(),
+		'post_status'         => 'publish',
+		's'                   => $q,
+		'posts_per_page'      => 1,
+		'fields'              => 'ids',
+		'no_found_rows'       => false,
+		'ignore_sticky_posts' => true,
+	) );
+	$n = (int) $query->found_posts;
+	wp_reset_postdata();
+	return $n;
+}
+
+/**
  * Log (upsert) a searched keyword.
  */
 function ts_ls_rest_log( $request ) {
@@ -330,31 +354,52 @@ function ts_ls_rest_log( $request ) {
 	}
 	set_transient( $key, 1, 10 * MINUTE_IN_SECONDS );
 
-	$table = ts_ls_table();
-	$now   = current_time( 'mysql' );
+	$table   = ts_ls_table();
+	$now     = current_time( 'mysql' );
+	$results = ts_ls_count_results( $kw );
 
-	// Atomic upsert keyed on the UNIQUE keyword column.
+	// Atomic upsert keyed on the UNIQUE keyword column. The live result count is
+	// refreshed each time so an old "no results" keyword clears once you publish.
 	$wpdb->query(
 		$wpdb->prepare(
-			"INSERT INTO {$table} (keyword, hits, written, last_searched, created_at)
-			 VALUES (%s, 1, 0, %s, %s)
-			 ON DUPLICATE KEY UPDATE hits = hits + 1, last_searched = VALUES(last_searched)",
+			"INSERT INTO {$table} (keyword, hits, written, results, last_searched, created_at)
+			 VALUES (%s, 1, 0, %d, %s, %s)
+			 ON DUPLICATE KEY UPDATE hits = hits + 1, results = VALUES(results), last_searched = VALUES(last_searched)",
 			$kw,
+			$results,
 			$now,
 			$now
 		)
 	);
 
-	return array( 'ok' => true );
+	return array( 'ok' => true, 'results' => $results );
+}
+
+/**
+ * Number of searched keywords that returned no results and are not yet handled.
+ * Used for the admin menu notification bubble.
+ *
+ * @return int
+ */
+function ts_ls_unresolved_count() {
+	global $wpdb;
+	$table = ts_ls_table();
+	return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE results = 0 AND written = 0" );
 }
 
 /* ==========================================================
  * 4. ADMIN — keyword log with filters + "written" flag
  * ========================================================== */
 add_action( 'admin_menu', function () {
+	// Notification bubble: number of no-result keywords still needing an article.
+	$unresolved = ts_ls_unresolved_count();
+	$bubble     = $unresolved
+		? ' <span class="update-plugins count-' . (int) $unresolved . '"><span class="plugin-count">' . number_format_i18n( $unresolved ) . '</span></span>'
+		: '';
+
 	add_menu_page(
 		'Search Keywords',
-		'Search Keywords',
+		'Search Keywords' . $bubble,
 		'manage_options',
 		'ts-search-keywords',
 		'ts_ls_admin_page',
@@ -448,6 +493,8 @@ function ts_ls_admin_page() {
 		$where .= ' AND written = 1';
 	} elseif ( 'pending' === $status ) {
 		$where .= ' AND written = 0';
+	} elseif ( 'noresults' === $status ) {
+		$where .= ' AND results = 0';
 	}
 	if ( '' !== $search ) {
 		$where   .= ' AND keyword LIKE %s';
@@ -469,18 +516,33 @@ function ts_ls_admin_page() {
 	$rows        = $wpdb->get_results( $wpdb->prepare( $list_sql, $list_params ) );
 
 	// Totals for the status tabs.
-	$n_all     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
-	$n_written = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE written = 1" );
-	$n_pending = $n_all - $n_written;
+	$n_all       = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+	$n_written   = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE written = 1" );
+	$n_pending   = $n_all - $n_written;
+	$n_noresults = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE results = 0" );
+	$n_unresolved = ts_ls_unresolved_count();
 
 	$base = admin_url( 'admin.php?page=ts-search-keywords' );
 	?>
 	<div class="wrap">
 		<h1>Search Keywords</h1>
-		<p>Every search visitors run is recorded here and grouped by keyword. Tick <strong>Article written</strong> once you have published a post targeting that keyword, then Save.</p>
+		<p>Every search visitors run is recorded here and grouped by keyword, along with how many posts it matched. Tick <strong>Article written</strong> once you have published a post targeting that keyword, then Save.</p>
+
+		<?php if ( $n_unresolved > 0 ) : ?>
+			<div class="notice notice-warning" style="border-left-color:#e8394c;">
+				<p>
+					<strong><?php echo esc_html( number_format_i18n( $n_unresolved ) ); ?></strong>
+					searched <?php echo 1 === $n_unresolved ? 'keyword' : 'keywords'; ?> returned
+					<strong>no results</strong> and <?php echo 1 === $n_unresolved ? 'has' : 'have'; ?> no article yet &mdash;
+					a content opportunity.
+					<a href="<?php echo esc_url( add_query_arg( 'status', 'noresults', $base ) ); ?>">Review them &rarr;</a>
+				</p>
+			</div>
+		<?php endif; ?>
 
 		<ul class="subsubsub">
 			<li><a href="<?php echo esc_url( add_query_arg( 'status', 'all', $base ) ); ?>" class="<?php echo 'all' === $status ? 'current' : ''; ?>">All <span class="count">(<?php echo esc_html( $n_all ); ?>)</span></a> |</li>
+			<li><a href="<?php echo esc_url( add_query_arg( 'status', 'noresults', $base ) ); ?>" class="<?php echo 'noresults' === $status ? 'current' : ''; ?>" style="color:#b42318;">No results <span class="count">(<?php echo esc_html( $n_noresults ); ?>)</span></a> |</li>
 			<li><a href="<?php echo esc_url( add_query_arg( 'status', 'pending', $base ) ); ?>" class="<?php echo 'pending' === $status ? 'current' : ''; ?>">Not written <span class="count">(<?php echo esc_html( $n_pending ); ?>)</span></a> |</li>
 			<li><a href="<?php echo esc_url( add_query_arg( 'status', 'written', $base ) ); ?>" class="<?php echo 'written' === $status ? 'current' : ''; ?>">Written <span class="count">(<?php echo esc_html( $n_written ); ?>)</span></a></li>
 		</ul>
@@ -506,14 +568,15 @@ function ts_ls_admin_page() {
 					<tr>
 						<th style="width:120px;">Article written</th>
 						<th>Keyword</th>
+						<th style="width:130px;">Results</th>
 						<th style="width:110px;">Searches</th>
 						<th style="width:180px;">Last searched</th>
-						<th style="width:150px;">Actions</th>
+						<th style="width:120px;">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $rows ) ) : ?>
-						<tr><td colspan="5">No keywords yet.</td></tr>
+						<tr><td colspan="6">No keywords yet.</td></tr>
 					<?php else : ?>
 						<?php foreach ( $rows as $r ) : ?>
 							<tr>
@@ -531,6 +594,13 @@ function ts_ls_admin_page() {
 								<td>
 									<strong><?php echo esc_html( $r->keyword ); ?></strong>
 									<a href="<?php echo esc_url( home_url( '/?s=' . rawurlencode( $r->keyword ) ) ); ?>" target="_blank" class="dashicons dashicons-external" style="text-decoration:none;" title="See results on site"></a>
+								</td>
+								<td>
+									<?php if ( 0 === (int) $r->results ) : ?>
+										<span class="ts-ls-badge is-no">No results</span>
+									<?php else : ?>
+										<?php echo esc_html( number_format_i18n( (int) $r->results ) ); ?>
+									<?php endif; ?>
 								</td>
 								<td><?php echo esc_html( number_format_i18n( (int) $r->hits ) ); ?></td>
 								<td><?php echo esc_html( mysql2date( 'M j, Y g:i a', $r->last_searched ) ); ?></td>
