@@ -5,7 +5,7 @@
  *              recorded and aggregated by keyword; each keyword can be marked as "Article written", and the
  *              admin list can be filtered by status and searched. Place the bar with the [live_search]
  *              shortcode, or let it auto-insert at the top of the homepage.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -159,7 +159,7 @@ add_action( 'loop_start', function ( $query ) {
 		return; // only the first page
 	}
 	echo ts_ls_render_bar(); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in builder
-} );
+}, 5 ); // priority 5 so the bar prints above the Homepage Content top block (which hooks loop_start at 10)
 
 /**
  * Front-end behaviour: debounce, fetch live results, log the keyword.
@@ -628,12 +628,15 @@ function ts_ls_styles() {
 	$done = true;
 	?>
 	<style id="ts-ls-styles">
-	.ts-search{position:relative;max-width:1180px;margin:0 auto 8px;width:100%;
+	.ts-search{position:relative;max-width:860px;margin:0 auto 22px;width:100%;
 		grid-column:1 / -1;flex-basis:100%;box-sizing:border-box;}
-	.ts-search-form{display:flex;align-items:center;gap:8px;background:#efefef;
-		border-radius:12px;padding:6px 6px 6px 22px;}
-	.ts-search-input{flex:1 1 auto;min-width:0;border:0;background:transparent;
-		font-size:17px;line-height:1.4;padding:16px 8px;color:#333;outline:none;}
+	.ts-search-form{display:flex;align-items:center;gap:8px;background:#fff;
+		border:1px solid #e5e7eb;border-radius:12px;padding:6px 6px 6px 22px;
+		box-shadow:0 1px 3px rgba(16,24,40,.05);}
+	/* Neutralise any theme styling on the inner field so the whole bar is one clean white pill. */
+	.ts-search .ts-search-input{flex:1 1 auto;min-width:0;border:0 !important;background:transparent !important;
+		box-shadow:none !important;font-size:17px;line-height:1.4;padding:16px 8px;color:#333;outline:none;margin:0;}
+	.ts-search .ts-search-input:focus{border:0 !important;box-shadow:none !important;outline:none;}
 	.ts-search-input::placeholder{color:#9aa0a6;}
 	.ts-search-btn{flex:0 0 auto;width:52px;height:52px;border:0;border-radius:50%;
 		background:#111;color:#fff;cursor:pointer;display:inline-flex;align-items:center;
