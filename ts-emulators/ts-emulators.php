@@ -257,8 +257,15 @@ function ts_emu_render_card( $post_id ) {
 	ob_start();
 	?>
 	<div class="ts-emu-card">
-		<?php if ( $logo ) : ?>
-			<div class="ts-emu-logo"><img src="<?php echo esc_url( $logo ); ?>" alt="<?php echo esc_attr( get_the_title( $post_id ) ); ?> logo" loading="eager"></div>
+		<?php if ( $logo || ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) ) : ?>
+		<div class="ts-emu-side">
+			<?php if ( $logo ) : ?>
+				<div class="ts-emu-logo"><img src="<?php echo esc_url( $logo ); ?>" alt="<?php echo esc_attr( get_the_title( $post_id ) ); ?> logo" loading="eager"></div>
+			<?php endif; ?>
+			<?php if ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) : ?>
+				<a class="ts-emu-official" href="<?php echo esc_url( $official ); ?>" target="_blank" rel="nofollow noopener">Official Site</a>
+			<?php endif; ?>
+		</div>
 		<?php endif; ?>
 		<div class="ts-emu-body">
 			<div class="ts-emu-rows">
@@ -284,12 +291,6 @@ function ts_emu_render_card( $post_id ) {
 							<span><?php echo '' !== $plat ? esc_html( 'Download for ' . $label ) : 'Download'; ?></span>
 						</a>
 					<?php endforeach; ?>
-				</div>
-			<?php endif; ?>
-
-			<?php if ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) : ?>
-				<div class="ts-emu-actions">
-					<a class="ts-emu-official" href="<?php echo esc_url( $official ); ?>" target="_blank" rel="nofollow noopener">Official Site</a>
 				</div>
 			<?php endif; ?>
 		</div>
@@ -411,7 +412,8 @@ function ts_emu_styles() {
 	/* Single emulator info card */
 	.ts-emu-card{display:flex;gap:22px;align-items:flex-start;background:#fff;border:1px solid #e8e8ea;
 		border-radius:16px;padding:22px 24px;margin:0 0 24px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
-	.ts-emu-logo{flex:0 0 auto;width:120px;height:120px;border-radius:16px;overflow:hidden;background:#f4f4f6;
+	.ts-emu-side{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;width:120px;}
+	.ts-emu-logo{width:120px;height:120px;border-radius:16px;overflow:hidden;background:#f4f4f6;
 		display:flex;align-items:center;justify-content:center;}
 	.ts-emu-logo img{width:100%;height:100%;object-fit:cover;display:block;}
 	.ts-emu-body{flex:1;min-width:0;}
@@ -430,9 +432,10 @@ function ts_emu_styles() {
 		font-weight:700;font-size:14px;text-decoration:none;padding:10px 22px;border-radius:10px;
 		box-shadow:0 2px 8px rgba(232,57,76,.26);transition:background .18s ease;}
 	.ts-emu-btn:hover{background:#cf2a3c;}
-	.ts-emu-official{display:inline-flex;align-items:center;gap:8px;background:#111827;color:#fff !important;
-		font-weight:700;font-size:14px;text-decoration:none;padding:10px 18px;border-radius:10px;transition:background .18s ease;}
+	.ts-emu-official{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#111827;color:#fff !important;
+		font-weight:700;font-size:14px;text-decoration:none;padding:10px 16px;border-radius:10px;transition:background .18s ease;}
 	.ts-emu-official:hover{background:#1f2937;}
+	.ts-emu-side .ts-emu-official{width:100%;box-sizing:border-box;}
 
 	/* [emulators] grid */
 	.ts-emu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;
