@@ -3,8 +3,9 @@
  * Plugin Name: TS Firmware List
  * Description: A simple manager for Nintendo Switch firmware downloads. Add each firmware (Name, Version,
  *              Download URL) under Settings -> Firmwares, then drop the [firmwares] shortcode on any page.
- *              Each firmware renders as a single row: name, version and a download button.
- * Version: 1.0
+ *              Each firmware renders as a single row: name, version and a download button. The page has a
+ *              live search box (also reads ?fw= / ?q= to pre-filter from a link).
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -153,33 +154,91 @@ add_shortcode( 'firmwares', function ( $atts ) {
 		<?php if ( empty( $items ) ) : ?>
 			<p class="ts-fw-empty">No firmwares have been added yet.</p>
 		<?php else : ?>
-			<?php foreach ( $items as $it ) :
-				$name    = isset( $it['name'] ) ? $it['name'] : '';
-				$version = isset( $it['version'] ) ? $it['version'] : '';
-				$url     = isset( $it['url'] ) ? $it['url'] : '';
-				if ( '' === $name && '' === $url ) {
-					continue;
-				}
-				?>
-				<div class="ts-fw-row">
-					<span class="ts-fw-name"><?php echo esc_html( $name ); ?></span>
-					<?php if ( '' !== $version ) : ?>
-						<span class="ts-fw-ver"><?php echo esc_html( $version ); ?></span>
-					<?php endif; ?>
-					<?php if ( '' !== $url ) : ?>
-						<a class="ts-fw-btn" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="nofollow noopener">
-							<?php echo ts_fw_download_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?>
-							<span>Download</span>
-						</a>
-					<?php else : ?>
-						<span class="ts-fw-btn ts-fw-btn-disabled">Soon</span>
-					<?php endif; ?>
-				</div>
-			<?php endforeach; ?>
+			<div class="ts-fw-search">
+				<svg class="ts-fw-search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+					<circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4.3-4.3"/>
+				</svg>
+				<input type="search" class="ts-fw-search-input" placeholder="Search firmware version…" aria-label="Search firmware">
+			</div>
+
+			<div class="ts-fw-rows">
+				<?php foreach ( $items as $it ) :
+					$name    = isset( $it['name'] ) ? $it['name'] : '';
+					$version = isset( $it['version'] ) ? $it['version'] : '';
+					$url     = isset( $it['url'] ) ? $it['url'] : '';
+					if ( '' === $name && '' === $url ) {
+						continue;
+					}
+					$haystack = strtolower( trim( $name . ' ' . $version ) );
+					?>
+					<div class="ts-fw-row" data-search="<?php echo esc_attr( $haystack ); ?>">
+						<span class="ts-fw-name"><?php echo esc_html( $name ); ?></span>
+						<?php if ( '' !== $version ) : ?>
+							<span class="ts-fw-ver"><?php echo esc_html( $version ); ?></span>
+						<?php endif; ?>
+						<?php if ( '' !== $url ) : ?>
+							<a class="ts-fw-btn" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="nofollow noopener">
+								<?php echo ts_fw_download_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?>
+								<span>Download</span>
+							</a>
+						<?php else : ?>
+							<span class="ts-fw-btn ts-fw-btn-disabled">Soon</span>
+						<?php endif; ?>
+					</div>
+				<?php endforeach; ?>
+			</div>
+			<p class="ts-fw-noresults" hidden>No firmware matches your search.</p>
 		<?php endif; ?>
 	</div>
 	<?php
 	return ob_get_clean();
+} );
+
+/**
+ * Front-end filtering for the firmware list. Reads a ?fw= (or ?q=) query param
+ * so a link like /firmwares/?fw=18.1.0 pre-filters to that version.
+ */
+add_action( 'wp_footer', function () {
+	if ( is_admin() ) {
+		return;
+	}
+	?>
+	<script id="ts-fw-js">
+	(function(){
+		var lists = document.querySelectorAll('.ts-fw-list');
+		if (!lists.length) return;
+
+		function param(name){
+			try { return new URLSearchParams(window.location.search).get(name) || ''; }
+			catch(e){ return ''; }
+		}
+		var preset = (param('fw') || param('q') || '').trim();
+
+		Array.prototype.forEach.call(lists, function(list){
+			var input = list.querySelector('.ts-fw-search-input');
+			var rows  = Array.prototype.slice.call(list.querySelectorAll('.ts-fw-row'));
+			var none  = list.querySelector('.ts-fw-noresults');
+			if (!input) return;
+
+			function apply(){
+				var q = input.value.trim().toLowerCase();
+				var shown = 0;
+				rows.forEach(function(r){
+					var hay = r.getAttribute('data-search') || '';
+					var match = !q || hay.indexOf(q) !== -1;
+					r.style.display = match ? '' : 'none';
+					if (match) shown++;
+				});
+				if (none) none.hidden = shown !== 0;
+			}
+
+			if (preset){ input.value = preset; }
+			input.addEventListener('input', apply);
+			apply();
+		});
+	})();
+	</script>
+	<?php
 } );
 
 /* ==========================================================
@@ -195,6 +254,13 @@ function ts_fw_styles() {
 	<style id="ts-fw-styles">
 	.ts-fw-list{max-width:820px;margin:24px auto;display:flex;flex-direction:column;gap:10px;}
 	.ts-fw-title{font-size:22px;font-weight:800;color:#101828;margin:0 0 6px;}
+	.ts-fw-search{position:relative;margin:0 0 6px;}
+	.ts-fw-search-ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:#98a2b3;pointer-events:none;}
+	.ts-fw-search-input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:12px;
+		background:#fff;padding:13px 16px 13px 42px;font-size:15px;color:#101828;outline:none;
+		transition:border-color .15s ease,box-shadow .15s ease;}
+	.ts-fw-search-input:focus{border-color:#e8394c;box-shadow:0 0 0 3px rgba(232,57,76,.12);}
+	.ts-fw-rows{display:flex;flex-direction:column;gap:10px;}
 	.ts-fw-row{
 		display:flex;align-items:center;gap:16px;
 		background:#fff;border:1px solid #e8e8ea;border-radius:12px;
@@ -214,7 +280,7 @@ function ts_fw_styles() {
 	}
 	.ts-fw-btn:hover{background:#cf2a3c;}
 	.ts-fw-btn-disabled{background:#c7ccd3 !important;box-shadow:none;cursor:default;}
-	.ts-fw-empty{color:#667085;}
+	.ts-fw-empty,.ts-fw-noresults{color:#667085;}
 	@media (max-width:560px){
 		.ts-fw-row{flex-wrap:wrap;}
 		.ts-fw-name{flex:1 1 100%;}

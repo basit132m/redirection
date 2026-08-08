@@ -7,7 +7,8 @@
  *              The cover column stacks a thumbs up/down engagement bar above the
  *              cover art, then the Official Site link, then the Download button.
  *              Includes Schema.org JSON-LD (with like/dislike interaction counts).
- * Version: 3.1
+ *              "Required Firmware" links to the [firmwares] page (pre-filtered to that version).
+ * Version: 3.2
  */
 
 if ( ! defined('ABSPATH') ) exit;
@@ -131,6 +132,44 @@ function ts_gi_save_meta($post_id) {
     }
 }
 add_action('save_post', 'ts_gi_save_meta');
+
+/**
+ * Find the URL of the page that hosts the [firmwares] list, so the
+ * "Required Firmware" value can link to it. Auto-detected (the published page
+ * whose content contains the shortcode) and cached; override with the
+ * 'ts_gi_firmware_page_url' filter if you prefer a fixed URL.
+ *
+ * @return string Page URL, or '' if none found.
+ */
+function ts_gi_firmware_page_url() {
+    $override = apply_filters('ts_gi_firmware_page_url', null);
+    if (is_string($override)) {
+        return $override;
+    }
+
+    $cached = get_transient('ts_gi_fw_page_url');
+    if (false !== $cached) {
+        return $cached;
+    }
+
+    global $wpdb;
+    $id = (int) $wpdb->get_var(
+        "SELECT ID FROM {$wpdb->posts}
+         WHERE post_status = 'publish' AND post_type = 'page'
+           AND post_content LIKE '%[firmwares%'
+         ORDER BY ID ASC LIMIT 1"
+    );
+
+    $url = $id ? get_permalink($id) : '';
+    set_transient('ts_gi_fw_page_url', $url, 12 * HOUR_IN_SECONDS);
+    return $url;
+}
+
+// Clear the cached firmware-page URL whenever a page is saved (it may have
+// gained or lost the shortcode).
+add_action('save_post_page', function () {
+    delete_transient('ts_gi_fw_page_url');
+});
 
 /* ==========================================================
  * 4. FRONTEND RENDER — two-column card
@@ -282,7 +321,20 @@ function ts_gi_render($atts = []) {
                 <?php if ($firmware) : ?>
                 <div class="ts-gi-row">
                     <span class="ts-gi-label">Required Firmware</span>
-                    <span class="ts-gi-value"><?php echo esc_html($firmware); ?></span>
+                    <span class="ts-gi-value ts-gi-link">
+                        <?php
+                        $fw_page = ts_gi_firmware_page_url();
+                        if ($fw_page) {
+                            printf(
+                                '<a href="%s">%s</a>',
+                                esc_url(add_query_arg('fw', rawurlencode($firmware), $fw_page)),
+                                esc_html($firmware)
+                            );
+                        } else {
+                            echo esc_html($firmware);
+                        }
+                        ?>
+                    </span>
                 </div>
                 <?php endif; ?>
 
