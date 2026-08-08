@@ -208,11 +208,18 @@ add_action( 'wp_footer', function () {
 		var lists = document.querySelectorAll('.ts-fw-list');
 		if (!lists.length) return;
 
-		function param(name){
+		function qparam(name){
 			try { return new URLSearchParams(window.location.search).get(name) || ''; }
 			catch(e){ return ''; }
 		}
-		var preset = (param('fw') || param('q') || '').trim();
+		function hparam(name){
+			try {
+				var h = (window.location.hash || '').replace(/^#/, '');
+				return new URLSearchParams(h).get(name) || '';
+			} catch(e){ return ''; }
+		}
+		// Prefer the SEO-safe hash (#fw=...), fall back to ?fw= / ?q=.
+		function preset(){ return (hparam('fw') || qparam('fw') || qparam('q') || '').trim(); }
 
 		Array.prototype.forEach.call(lists, function(list){
 			var input = list.querySelector('.ts-fw-search-input');
@@ -232,8 +239,14 @@ add_action( 'wp_footer', function () {
 				if (none) none.hidden = shown !== 0;
 			}
 
-			if (preset){ input.value = preset; }
+			var p = preset();
+			if (p){ input.value = p; }
 			input.addEventListener('input', apply);
+			// Re-apply if the visitor arrives via a #fw= link after load.
+			window.addEventListener('hashchange', function(){
+				var np = preset();
+				if (np){ input.value = np; apply(); }
+			});
 			apply();
 		});
 	})();

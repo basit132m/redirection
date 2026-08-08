@@ -325,9 +325,13 @@ function ts_gi_render($atts = []) {
                         <?php
                         $fw_page = ts_gi_firmware_page_url();
                         if ($fw_page) {
+                            // Search only the version number, e.g. "17.0.0" from "Base – v17.0.0".
+                            $fw_query = preg_match('/\d+(?:\.\d+)+/', $firmware, $m) ? $m[0] : $firmware;
+                            // Use a URL hash (not a query param) so it never creates a
+                            // duplicate, crawlable variant of the firmware page.
                             printf(
                                 '<a href="%s">%s</a>',
-                                esc_url(add_query_arg('fw', rawurlencode($firmware), $fw_page)),
+                                esc_url($fw_page . '#fw=' . rawurlencode($fw_query)),
                                 esc_html($firmware)
                             );
                         } else {
