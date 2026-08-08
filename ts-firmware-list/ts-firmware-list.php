@@ -4,8 +4,9 @@
  * Description: A simple manager for Nintendo Switch firmware downloads. Add each firmware (Name, Version,
  *              Download URL) under Settings -> Firmwares, then drop the [firmwares] shortcode on any page.
  *              Each firmware renders as a single row: name, version and a download button. The page has a
- *              live search box (also reads ?fw= / ?q= to pre-filter from a link).
- * Version: 1.1
+ *              live search box (also reads #fw= / ?fw= / ?q= to pre-filter from a link). The list is a
+ *              responsive multi-column grid of compact cards.
+ * Version: 1.2
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -173,17 +174,21 @@ add_shortcode( 'firmwares', function ( $atts ) {
 					?>
 					<div class="ts-fw-row" data-search="<?php echo esc_attr( $haystack ); ?>">
 						<span class="ts-fw-name"><?php echo esc_html( $name ); ?></span>
-						<?php if ( '' !== $version ) : ?>
-							<span class="ts-fw-ver"><?php echo esc_html( $version ); ?></span>
-						<?php endif; ?>
-						<?php if ( '' !== $url ) : ?>
-							<a class="ts-fw-btn" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="nofollow noopener">
-								<?php echo ts_fw_download_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?>
-								<span>Download</span>
-							</a>
-						<?php else : ?>
-							<span class="ts-fw-btn ts-fw-btn-disabled">Soon</span>
-						<?php endif; ?>
+						<div class="ts-fw-foot">
+							<?php if ( '' !== $version ) : ?>
+								<span class="ts-fw-ver"><?php echo esc_html( $version ); ?></span>
+							<?php else : ?>
+								<span></span>
+							<?php endif; ?>
+							<?php if ( '' !== $url ) : ?>
+								<a class="ts-fw-btn" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="nofollow noopener">
+									<?php echo ts_fw_download_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static inline SVG ?>
+									<span>Download</span>
+								</a>
+							<?php else : ?>
+								<span class="ts-fw-btn ts-fw-btn-disabled">Soon</span>
+							<?php endif; ?>
+						</div>
 					</div>
 				<?php endforeach; ?>
 			</div>
@@ -265,39 +270,43 @@ function ts_fw_styles() {
 	$done = true;
 	?>
 	<style id="ts-fw-styles">
-	.ts-fw-list{max-width:820px;margin:24px auto;display:flex;flex-direction:column;gap:10px;}
-	.ts-fw-title{font-size:22px;font-weight:800;color:#101828;margin:0 0 6px;}
-	.ts-fw-search{position:relative;margin:0 0 6px;}
+	.ts-fw-list{max-width:1180px;margin:24px auto;display:flex;flex-direction:column;gap:14px;}
+	.ts-fw-title{font-size:22px;font-weight:800;color:#101828;margin:0 0 2px;}
+	.ts-fw-search{position:relative;width:100%;max-width:460px;}
 	.ts-fw-search-ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:#98a2b3;pointer-events:none;}
 	.ts-fw-search-input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:12px;
-		background:#fff;padding:13px 16px 13px 42px;font-size:15px;color:#101828;outline:none;
+		background:#fff;padding:12px 16px 12px 42px;font-size:15px;color:#101828;outline:none;
 		transition:border-color .15s ease,box-shadow .15s ease;}
 	.ts-fw-search-input:focus{border-color:#e8394c;box-shadow:0 0 0 3px rgba(232,57,76,.12);}
-	.ts-fw-rows{display:flex;flex-direction:column;gap:10px;}
+
+	/* Multi-column grid of compact cards: fills the width, less scrolling. */
+	.ts-fw-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;}
 	.ts-fw-row{
-		display:flex;align-items:center;gap:16px;
+		display:flex;flex-direction:column;justify-content:space-between;gap:12px;
 		background:#fff;border:1px solid #e8e8ea;border-radius:12px;
-		padding:14px 18px;box-shadow:0 1px 3px rgba(16,24,40,.05);
+		padding:14px 16px;box-shadow:0 1px 3px rgba(16,24,40,.05);
+		transition:border-color .15s ease,box-shadow .15s ease;
 	}
-	.ts-fw-name{flex:1 1 auto;min-width:0;font-weight:700;font-size:15px;color:#101828;word-break:break-word;}
+	.ts-fw-row:hover{border-color:#f1c2c8;box-shadow:0 4px 14px rgba(16,24,40,.08);}
+	.ts-fw-name{font-weight:700;font-size:14.5px;line-height:1.35;color:#101828;word-break:break-word;}
+	.ts-fw-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 	.ts-fw-ver{
-		flex:0 0 auto;font-weight:700;font-size:13px;color:#15803d;
+		flex:0 0 auto;font-weight:700;font-size:12px;color:#15803d;
 		background:#ecfdf3;border:1px solid #d1fadf;border-radius:999px;
-		padding:4px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;
+		padding:3px 10px;white-space:nowrap;font-variant-numeric:tabular-nums;
 	}
 	.ts-fw-btn{
-		flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;
-		background:#e8394c;color:#fff !important;font-weight:700;font-size:14px;
-		text-decoration:none;padding:9px 18px;border-radius:10px;
+		flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
+		background:#e8394c;color:#fff !important;font-weight:700;font-size:13px;
+		text-decoration:none;padding:8px 14px;border-radius:9px;
 		transition:background .18s ease;box-shadow:0 2px 8px rgba(232,57,76,.24);
 	}
 	.ts-fw-btn:hover{background:#cf2a3c;}
 	.ts-fw-btn-disabled{background:#c7ccd3 !important;box-shadow:none;cursor:default;}
 	.ts-fw-empty,.ts-fw-noresults{color:#667085;}
-	@media (max-width:560px){
-		.ts-fw-row{flex-wrap:wrap;}
-		.ts-fw-name{flex:1 1 100%;}
-		.ts-fw-btn{flex:1 1 auto;justify-content:center;}
+	@media (max-width:520px){
+		.ts-fw-rows{grid-template-columns:1fr;}
+		.ts-fw-search{max-width:100%;}
 	}
 	</style>
 	<?php
