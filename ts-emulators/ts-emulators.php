@@ -4,8 +4,9 @@
  * Description: Publish emulators from the admin as their own pages. Registers an "Emulators" custom post
  *              type (each emulator gets its own page at /emulator/<slug>/ with logo, info fields and a
  *              download button), and provides the [emulators] shortcode to list them all in a grid on any
- *              page. Includes SoftwareApplication JSON-LD for SEO.
- * Version: 1.0
+ *              page. Each emulator can have multiple per-platform download links (Windows, Android, macOS,
+ *              Linux…). Includes SoftwareApplication JSON-LD for SEO.
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -67,8 +68,48 @@ function ts_emu_fields() {
 		'emu_license'   => 'License (e.g. Open source, Freeware)',
 		'emu_size'      => 'Size (e.g. 45 MB)',
 		'emu_official'  => 'Official Site URL',
-		'emu_download'  => 'Download URL',
 	);
+}
+
+/**
+ * Per-platform download links stored on an emulator.
+ *
+ * @param int $post_id Post ID.
+ * @return array List of [ 'platform' => string, 'url' => string ].
+ */
+function ts_emu_get_downloads( $post_id ) {
+	$links = get_post_meta( $post_id, 'emu_downloads', true );
+	if ( ! is_array( $links ) ) {
+		$links = array();
+	}
+	// Back-compat: fall back to the old single Download URL field.
+	if ( empty( $links ) ) {
+		$legacy = get_post_meta( $post_id, 'emu_download', true );
+		if ( $legacy ) {
+			$links[] = array( 'platform' => '', 'url' => $legacy );
+		}
+	}
+	return $links;
+}
+
+/**
+ * Small OS icon for a platform label (Windows / Mac / Android), else a download glyph.
+ *
+ * @param string $platform Platform label.
+ * @return string Inline SVG.
+ */
+function ts_emu_platform_icon( $platform ) {
+	$p = strtolower( (string) $platform );
+	if ( false !== strpos( $p, 'win' ) ) {
+		return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 5.4 10.4 4.3v6.6H3V5.4zM10.4 12v6.7L3 17.6V12h7.4zM12 4 21 3v8h-9V4zM21 12v9l-9-1.2V12h9z"/></svg>';
+	}
+	if ( false !== strpos( $p, 'mac' ) || false !== strpos( $p, 'apple' ) || false !== strpos( $p, 'ios' ) || false !== strpos( $p, 'iphone' ) || false !== strpos( $p, 'ipad' ) ) {
+		return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 16.55 2.94 12 4.7 8.92c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.3zM13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>';
+	}
+	if ( false !== strpos( $p, 'android' ) ) {
+		return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M6 9v8a1 1 0 001 1h1v2.5a1.5 1.5 0 003 0V18h2v2.5a1.5 1.5 0 003 0V18h1a1 1 0 001-1V9H6zM3.5 9A1.5 1.5 0 002 10.5v4a1.5 1.5 0 003 0v-4A1.5 1.5 0 003.5 9zm17 0a1.5 1.5 0 00-1.5 1.5v4a1.5 1.5 0 003 0v-4A1.5 1.5 0 0020.5 9zM15.6 2.6l1-1a.35.35 0 10-.5-.5l-1.14 1.14A5.9 5.9 0 0012 1.6c-.72 0-1.4.13-2.03.36L8.9 1.1a.35.35 0 10-.5.5l1 1A5.6 5.6 0 006 7.2h12a5.6 5.6 0 00-2.4-4.6zM9.6 5.3a.75.75 0 110-1.5.75.75 0 010 1.5zm4.8 0a.75.75 0 110-1.5.75.75 0 010 1.5z"/></svg>';
+	}
+	return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>';
 }
 
 add_action( 'init', function () {
@@ -91,7 +132,7 @@ function ts_emu_meta_box_html( $post ) {
 	echo '<table class="form-table">';
 	foreach ( ts_emu_fields() as $key => $label ) {
 		$val  = get_post_meta( $post->ID, $key, true );
-		$type = ( in_array( $key, array( 'emu_official', 'emu_download' ), true ) ) ? 'url' : 'text';
+		$type = ( 'emu_official' === $key ) ? 'url' : 'text';
 		printf(
 			'<tr><th><label for="%1$s">%2$s</label></th><td><input type="%3$s" id="%1$s" name="%1$s" value="%4$s" style="width:100%%;"></td></tr>',
 			esc_attr( $key ),
@@ -101,7 +142,43 @@ function ts_emu_meta_box_html( $post ) {
 		);
 	}
 	echo '</table>';
-	echo '<p class="description">The logo comes from the <strong>Featured image</strong>. The main description is the editor content above. Show the full list anywhere with the <code>[emulators]</code> shortcode.</p>';
+
+	// Repeatable per-platform download links.
+	$downloads = ts_emu_get_downloads( $post->ID );
+	if ( empty( $downloads ) ) {
+		$downloads = array( array( 'platform' => '', 'url' => '' ) );
+	}
+	?>
+	<p style="font-weight:600;margin:18px 0 6px;">Download links <span style="font-weight:400;color:#777;">(one per platform — Windows, Android, macOS, Linux…)</span></p>
+	<div id="ts-emu-dl-rows">
+		<?php foreach ( $downloads as $dl ) :
+			$dl = array_merge( array( 'platform' => '', 'url' => '' ), (array) $dl ); ?>
+			<div class="ts-emu-dl-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+				<input type="text" name="emu_dl_platform[]" placeholder="Platform (e.g. Windows)" value="<?php echo esc_attr( $dl['platform'] ); ?>" style="flex:1;">
+				<input type="url" name="emu_dl_url[]" placeholder="https://download-url" value="<?php echo esc_attr( $dl['url'] ); ?>" style="flex:3;">
+				<button type="button" class="button ts-emu-dl-remove" style="flex:0 0 auto;">&times;</button>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<button type="button" class="button button-secondary" id="ts-emu-dl-add">+ Add download link</button>
+	<p class="description" style="margin-top:10px;">The logo comes from the <strong>Featured image</strong>; the main description is the editor content above. Show the full list anywhere with the <code>[emulators]</code> shortcode.</p>
+	<script>
+	jQuery(function($){
+		$('#ts-emu-dl-add').on('click', function(){
+			$('#ts-emu-dl-rows').append(
+				'<div class="ts-emu-dl-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">' +
+				'<input type="text" name="emu_dl_platform[]" placeholder="Platform (e.g. Windows)" style="flex:1;">' +
+				'<input type="url" name="emu_dl_url[]" placeholder="https://download-url" style="flex:3;">' +
+				'<button type="button" class="button ts-emu-dl-remove" style="flex:0 0 auto;">&times;</button></div>'
+			);
+		});
+		$(document).on('click', '.ts-emu-dl-remove', function(){
+			if ($('#ts-emu-dl-rows .ts-emu-dl-row').length > 1) { $(this).closest('.ts-emu-dl-row').remove(); }
+			else { $(this).closest('.ts-emu-dl-row').find('input').val(''); }
+		});
+	});
+	</script>
+	<?php
 }
 
 add_action( 'save_post_' . TS_EMU_CPT, function ( $post_id ) {
@@ -119,12 +196,28 @@ add_action( 'save_post_' . TS_EMU_CPT, function ( $post_id ) {
 			continue;
 		}
 		$raw = wp_unslash( $_POST[ $key ] );
-		if ( in_array( $key, array( 'emu_official', 'emu_download' ), true ) ) {
+		if ( 'emu_official' === $key ) {
 			update_post_meta( $post_id, $key, esc_url_raw( trim( $raw ) ) );
 		} else {
 			update_post_meta( $post_id, $key, sanitize_text_field( $raw ) );
 		}
 	}
+
+	// Per-platform download links.
+	$platforms = isset( $_POST['emu_dl_platform'] ) ? (array) wp_unslash( $_POST['emu_dl_platform'] ) : array();
+	$urls      = isset( $_POST['emu_dl_url'] ) ? (array) wp_unslash( $_POST['emu_dl_url'] ) : array();
+	$links     = array();
+	foreach ( $urls as $i => $url ) {
+		$url = esc_url_raw( trim( $url ) );
+		if ( '' === $url ) {
+			continue;
+		}
+		$links[] = array(
+			'platform' => isset( $platforms[ $i ] ) ? sanitize_text_field( $platforms[ $i ] ) : '',
+			'url'      => $url,
+		);
+	}
+	update_post_meta( $post_id, 'emu_downloads', $links );
 } );
 
 /* ==========================================================
@@ -159,7 +252,7 @@ function ts_emu_render_card( $post_id ) {
 	$license   = get_post_meta( $post_id, 'emu_license', true );
 	$size      = get_post_meta( $post_id, 'emu_size', true );
 	$official  = get_post_meta( $post_id, 'emu_official', true );
-	$download  = get_post_meta( $post_id, 'emu_download', true );
+	$downloads = ts_emu_get_downloads( $post_id );
 
 	ob_start();
 	?>
@@ -177,17 +270,28 @@ function ts_emu_render_card( $post_id ) {
 
 			<?php echo ts_emu_platform_chips( $platforms ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in helper ?>
 
-			<div class="ts-emu-actions">
-				<?php if ( $download ) : ?>
-					<a class="ts-emu-btn" href="<?php echo esc_url( $download ); ?>" target="_blank" rel="nofollow noopener">
-						<?php echo ts_emu_download_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG ?>
-						<span>Download</span>
-					</a>
-				<?php endif; ?>
-				<?php if ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) : ?>
+			<?php if ( ! empty( $downloads ) ) : ?>
+				<div class="ts-emu-downloads">
+					<?php foreach ( $downloads as $dl ) :
+						if ( empty( $dl['url'] ) ) {
+							continue;
+						}
+						$plat  = isset( $dl['platform'] ) ? trim( $dl['platform'] ) : '';
+						$label = '' !== $plat ? $plat : 'Download';
+						?>
+						<a class="ts-emu-btn" href="<?php echo esc_url( $dl['url'] ); ?>" target="_blank" rel="nofollow noopener">
+							<?php echo ts_emu_platform_icon( $plat ); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG ?>
+							<span><?php echo '' !== $plat ? esc_html( 'Download for ' . $label ) : 'Download'; ?></span>
+						</a>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) : ?>
+				<div class="ts-emu-actions">
 					<a class="ts-emu-official" href="<?php echo esc_url( $official ); ?>" target="_blank" rel="nofollow noopener">Official Site</a>
-				<?php endif; ?>
-			</div>
+				</div>
+			<?php endif; ?>
 		</div>
 	</div>
 	<?php
@@ -320,7 +424,8 @@ function ts_emu_styles() {
 	.ts-emu-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0;}
 	.ts-emu-chip{font-size:12px;font-weight:700;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;
 		border-radius:999px;padding:3px 11px;}
-	.ts-emu-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;}
+	.ts-emu-downloads{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;}
+	.ts-emu-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
 	.ts-emu-btn{display:inline-flex;align-items:center;gap:8px;background:#e8394c;color:#fff !important;
 		font-weight:700;font-size:14px;text-decoration:none;padding:10px 22px;border-radius:10px;
 		box-shadow:0 2px 8px rgba(232,57,76,.26);transition:background .18s ease;}
