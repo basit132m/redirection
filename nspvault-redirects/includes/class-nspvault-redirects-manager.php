@@ -179,6 +179,11 @@ class NSPVault_Redirects_Manager {
 			return;
 		}
 
+		// This individual redirect is paused: leave the URL alone.
+		if ( ! empty( $row->paused ) ) {
+			return;
+		}
+
 		// Never redirect a path onto itself.
 		if ( $this->db->normalize_path( $row->target_path ) === $request_path ) {
 			return;

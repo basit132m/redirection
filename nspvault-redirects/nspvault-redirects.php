@@ -3,7 +3,7 @@
  * Plugin Name:       NSPVault Redirects
  * Plugin URI:        https://www.nspvault.com/
  * Description:        Automatically records old URLs when a post's slug/permalink changes and serves single-hop 301 redirects to the current URL. Guarantees no redirect chains (old -> -1 -> -2), so every historical URL always points directly to the newest one. Protects SEO when re-slugging and re-indexing content.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 5.6
  * Requires PHP:      7.2
  * Author:            NSPVault
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // No direct access.
 }
 
-define( 'NSPVAULT_REDIRECTS_VERSION', '1.1.0' );
+define( 'NSPVAULT_REDIRECTS_VERSION', '1.2.0' );
 define( 'NSPVAULT_REDIRECTS_FILE', __FILE__ );
 define( 'NSPVAULT_REDIRECTS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NSPVAULT_REDIRECTS_URL', plugin_dir_url( __FILE__ ) );
@@ -67,6 +67,13 @@ final class NSPVault_Redirects {
 	private function __construct() {
 		$this->db      = new NSPVault_Redirects_DB();
 		$this->manager = new NSPVault_Redirects_Manager( $this->db );
+
+		// Run pending schema upgrades (e.g. the per-redirect "paused" column)
+		// when the plugin is updated without being re-activated.
+		if ( is_admin() && get_option( 'nspvault_redirects_db_version' ) !== NSPVAULT_REDIRECTS_VERSION ) {
+			$this->db->create_table();
+			update_option( 'nspvault_redirects_db_version', NSPVAULT_REDIRECTS_VERSION );
+		}
 
 		$this->manager->register_hooks();
 

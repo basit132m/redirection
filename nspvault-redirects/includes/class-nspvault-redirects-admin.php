@@ -129,6 +129,24 @@ class NSPVault_Redirects_Admin {
 			$this->redirect_back();
 		}
 
+		// Pause / resume a single redirect.
+		if ( isset( $_GET['action'] ) && 'toggle_row' === $_GET['action'] && isset( $_GET['id'] ) ) {
+			$id = absint( $_GET['id'] );
+			check_admin_referer( 'nspvault_toggle_row_' . $id );
+
+			$row = $this->db->get_by_id( $id );
+			if ( $row ) {
+				$new = empty( $row->paused ) ? 1 : 0;
+				$this->db->set_paused( $id, $new );
+				$this->add_notice(
+					$new ? __( 'Redirect paused.', 'nspvault-redirects' ) : __( 'Redirect resumed.', 'nspvault-redirects' ),
+					$new ? 'warning' : 'success'
+				);
+			}
+
+			$this->redirect_back();
+		}
+
 		// Quick Pause / Resume toggle.
 		if ( isset( $_POST['nspvault_action'] ) && 'toggle_pause' === $_POST['nspvault_action'] ) {
 			check_admin_referer( 'nspvault_toggle_pause' );
@@ -350,12 +368,13 @@ class NSPVault_Redirects_Admin {
 						<th style="width:70px;"><?php esc_html_e( 'Code', 'nspvault-redirects' ); ?></th>
 						<th style="width:80px;"><?php esc_html_e( 'Source', 'nspvault-redirects' ); ?></th>
 						<th style="width:70px;"><?php esc_html_e( 'Hits', 'nspvault-redirects' ); ?></th>
-						<th style="width:90px;"><?php esc_html_e( 'Actions', 'nspvault-redirects' ); ?></th>
+						<th style="width:80px;"><?php esc_html_e( 'Status', 'nspvault-redirects' ); ?></th>
+						<th style="width:150px;"><?php esc_html_e( 'Actions', 'nspvault-redirects' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $rows ) ) : ?>
-						<tr><td colspan="6"><?php esc_html_e( 'No redirects yet.', 'nspvault-redirects' ); ?></td></tr>
+						<tr><td colspan="7"><?php esc_html_e( 'No redirects yet.', 'nspvault-redirects' ); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ( $rows as $row ) : ?>
 							<?php
@@ -370,6 +389,18 @@ class NSPVault_Redirects_Admin {
 								),
 								'nspvault_delete_' . $row->id
 							);
+							$toggle_url = wp_nonce_url(
+								$this->page_url(
+									array(
+										'action' => 'toggle_row',
+										'id'     => $row->id,
+										's'      => $search,
+										'paged'  => $paged,
+									)
+								),
+								'nspvault_toggle_row_' . $row->id
+							);
+							$is_paused = ! empty( $row->paused );
 							?>
 							<tr>
 								<td><code><?php echo esc_html( $row->source_path ); ?></code></td>
@@ -378,6 +409,15 @@ class NSPVault_Redirects_Admin {
 								<td><?php echo esc_html( 'manual' === $row->type ? __( 'Manual', 'nspvault-redirects' ) : __( 'Auto', 'nspvault-redirects' ) ); ?></td>
 								<td><?php echo esc_html( number_format_i18n( $row->hits ) ); ?></td>
 								<td>
+									<?php if ( $is_paused ) : ?>
+										<span style="color:#a30d0d; font-weight:600;"><?php esc_html_e( 'Paused', 'nspvault-redirects' ); ?></span>
+									<?php else : ?>
+										<span style="color:#1a7f37; font-weight:600;"><?php esc_html_e( 'Active', 'nspvault-redirects' ); ?></span>
+									<?php endif; ?>
+								</td>
+								<td>
+									<a href="<?php echo esc_url( $toggle_url ); ?>"><?php echo $is_paused ? esc_html__( 'Resume', 'nspvault-redirects' ) : esc_html__( 'Pause', 'nspvault-redirects' ); ?></a>
+									&nbsp;|&nbsp;
 									<a href="<?php echo esc_url( $delete_url ); ?>" class="submitdelete" onclick="return confirm('<?php echo esc_js( __( 'Delete this redirect?', 'nspvault-redirects' ) ); ?>');"><?php esc_html_e( 'Delete', 'nspvault-redirects' ); ?></a>
 								</td>
 							</tr>

@@ -59,6 +59,7 @@ class NSPVault_Redirects_DB {
 			post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			type VARCHAR(20) NOT NULL DEFAULT 'auto',
 			status_code SMALLINT UNSIGNED NOT NULL DEFAULT 301,
+			paused TINYINT(1) NOT NULL DEFAULT 0,
 			hits BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			last_hit_at DATETIME NULL DEFAULT NULL,
 			created_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
@@ -277,6 +278,42 @@ class NSPVault_Redirects_DB {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Fetch a single redirect row by ID.
+	 *
+	 * @param int $id Row ID.
+	 * @return object|null
+	 */
+	public function get_by_id( $id ) {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$row = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$this->table} WHERE id = %d", absint( $id ) )
+		);
+
+		return $row ? $row : null;
+	}
+
+	/**
+	 * Pause or resume a single redirect.
+	 *
+	 * @param int  $id     Row ID.
+	 * @param bool $paused True to pause, false to resume.
+	 * @return bool
+	 */
+	public function set_paused( $id, $paused ) {
+		global $wpdb;
+
+		return false !== $wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$this->table,
+			array( 'paused' => $paused ? 1 : 0, 'updated_at' => current_time( 'mysql' ) ),
+			array( 'id' => absint( $id ) ),
+			array( '%d', '%s' ),
+			array( '%d' )
+		);
 	}
 
 	/**
