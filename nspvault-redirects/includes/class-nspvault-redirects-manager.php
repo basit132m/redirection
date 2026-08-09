@@ -159,6 +159,12 @@ class NSPVault_Redirects_Manager {
 			return;
 		}
 
+		// Pause switch: keep every stored redirect but stop serving them.
+		$settings = NSPVault_Redirects::get_settings();
+		if ( ! empty( $settings['paused'] ) ) {
+			return;
+		}
+
 		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
 			return;
 		}

@@ -4,7 +4,7 @@ Tags: redirects, 301, seo, permalinks, slug
 Requires at least: 5.6
 Tested up to: 6.6
 Requires PHP: 7.2
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -40,6 +40,7 @@ to `-2/` in a single 301 hop. Search engines never see
 * Hit counters so you can see which old URLs still receive traffic.
 * Query strings preserved on redirect.
 * Trailing-slash tolerant matching.
+* Pause switch: temporarily stop serving all redirects without deleting them.
 
 == Frequently Asked Questions ==
 
@@ -59,6 +60,10 @@ Redirects are only looked up for requests that would otherwise 404-style match a
 stored source path, using an indexed single-row query.
 
 == Changelog ==
+
+= 1.1.0 =
+* Add a Pause redirects switch (quick Pause/Resume toggle + settings option) that
+  stops serving redirects while keeping every stored redirect intact.
 
 = 1.0.0 =
 * Initial release.

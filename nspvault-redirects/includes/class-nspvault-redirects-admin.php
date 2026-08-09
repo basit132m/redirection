@@ -129,12 +129,31 @@ class NSPVault_Redirects_Admin {
 			$this->redirect_back();
 		}
 
+		// Quick Pause / Resume toggle.
+		if ( isset( $_POST['nspvault_action'] ) && 'toggle_pause' === $_POST['nspvault_action'] ) {
+			check_admin_referer( 'nspvault_toggle_pause' );
+
+			$settings           = NSPVault_Redirects::get_settings();
+			$settings['paused'] = empty( $settings['paused'] ) ? 1 : 0;
+			update_option( NSPVAULT_REDIRECTS_OPTION, $settings );
+
+			$this->add_notice(
+				$settings['paused']
+					? __( 'Redirects paused. Retired URLs are no longer being redirected.', 'nspvault-redirects' )
+					: __( 'Redirects resumed. Retired URLs are redirecting again.', 'nspvault-redirects' ),
+				$settings['paused'] ? 'warning' : 'success'
+			);
+
+			$this->redirect_back();
+		}
+
 		// Save settings.
 		if ( isset( $_POST['nspvault_action'] ) && 'settings' === $_POST['nspvault_action'] ) {
 			check_admin_referer( 'nspvault_settings' );
 
 			$settings                 = NSPVault_Redirects::get_settings();
 			$settings['auto_capture'] = isset( $_POST['auto_capture'] ) ? 1 : 0;
+			$settings['paused']       = isset( $_POST['paused'] ) ? 1 : 0;
 			$settings['status_code']  = isset( $_POST['default_status_code'] ) && in_array( absint( $_POST['default_status_code'] ), array( 301, 302 ), true )
 				? absint( $_POST['default_status_code'] )
 				: 301;
@@ -249,6 +268,27 @@ class NSPVault_Redirects_Admin {
 			</p>
 
 			<?php $this->print_notices(); ?>
+
+			<?php $paused = ! empty( $settings['paused'] ); ?>
+			<div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:16px 0; padding:14px 18px; border-radius:8px; border:1px solid <?php echo $paused ? '#f0c8c8' : '#c6e6c6'; ?>; border-left:4px solid <?php echo $paused ? '#d63638' : '#2ea043'; ?>; background:<?php echo $paused ? '#fcf2f2' : '#f2fbf3'; ?>;">
+				<div>
+					<strong style="font-size:15px; color:<?php echo $paused ? '#a30d0d' : '#1a7f37'; ?>;">
+						<?php echo $paused ? esc_html__( 'Redirects are PAUSED', 'nspvault-redirects' ) : esc_html__( 'Redirects are Active', 'nspvault-redirects' ); ?>
+					</strong>
+					<div style="color:#50575e; font-size:13px; margin-top:2px;">
+						<?php echo $paused
+							? esc_html__( 'Retired URLs are not being redirected right now. All redirects are still saved and will work again when you resume.', 'nspvault-redirects' )
+							: esc_html__( 'Retired URLs are redirecting in a single 301 hop to their current URL.', 'nspvault-redirects' ); ?>
+					</div>
+				</div>
+				<form method="post" action="<?php echo esc_url( $this->page_url() ); ?>" style="margin:0; flex:0 0 auto;">
+					<?php wp_nonce_field( 'nspvault_toggle_pause' ); ?>
+					<input type="hidden" name="nspvault_action" value="toggle_pause">
+					<button type="submit" class="button <?php echo $paused ? 'button-primary' : ''; ?>">
+						<?php echo $paused ? esc_html__( '▶ Resume redirects', 'nspvault-redirects' ) : esc_html__( '⏸ Pause redirects', 'nspvault-redirects' ); ?>
+					</button>
+				</form>
+			</div>
 
 			<div style="display:flex; gap:16px; flex-wrap:wrap; margin:16px 0;">
 				<div class="card" style="padding:12px 16px;">
@@ -375,7 +415,16 @@ class NSPVault_Redirects_Admin {
 				<input type="hidden" name="nspvault_action" value="settings">
 				<table class="form-table" role="presentation">
 					<tr>
-						<th scope="row"><?php esc_html_e( 'Automatic capture', 'nspvault-redirects' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Pause redirects', 'nspvault-redirects' ); ?></th>
+							<td>
+								<label>
+									<input type="checkbox" name="paused" value="1" <?php checked( ! empty( $settings['paused'] ) ); ?>>
+									<?php esc_html_e( 'Temporarily stop serving redirects (stored redirects are kept and resume when unchecked).', 'nspvault-redirects' ); ?>
+								</label>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><?php esc_html_e( 'Automatic capture', 'nspvault-redirects' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="auto_capture" value="1" <?php checked( ! empty( $settings['auto_capture'] ) ); ?>>
