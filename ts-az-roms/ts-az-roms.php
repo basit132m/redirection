@@ -5,14 +5,14 @@
  *              All links are rendered server-side (crawlable), grouped under letter headings with
  *              anchor navigation, plus CollectionPage/ItemList structured data. The search box only
  *              filters markup that is already in the DOM, so nothing is hidden from search engines.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_AZ_VERSION', '1.0' );
+define( 'TS_AZ_VERSION', '1.1' );
 
 /* ==========================================================
  * 1. WHICH POST TYPES
@@ -36,16 +36,40 @@ function ts_az_default_types() {
  * ========================================================== */
 
 /**
+ * Plain-text title with a leading "Download" verb stripped for indexing.
+ *
+ * Most ROM posts are titled "Download <Name> Switch NSP/XCI". Left as-is every
+ * one of them would bucket (and sort) under D, drowning the real D titles. This
+ * removes a single leading "Download" token — together with the punctuation or
+ * whitespace that follows it — so the entry files under its real first letter.
+ * The displayed title is never altered; this key is used for bucketing/sorting
+ * only. Titles that are literally just "Download" fall back to the original so
+ * they never become empty.
+ *
+ * @param string $title Post title.
+ * @return string Plain-text title for indexing.
+ */
+function ts_az_index_title( $title ) {
+	$t = remove_accents( wp_strip_all_tags( (string) $title ) );
+	// \b keeps "Downloadable …" intact; the trailing class eats the separator
+	// ("Download A …" -> "A …", "Download: A …" -> "A …").
+	$stripped = preg_replace( '/^\s*download\b[\s:._\-]*/i', '', $t );
+
+	return ( null !== $stripped && '' !== trim( $stripped ) ) ? $stripped : $t;
+}
+
+/**
  * Bucket a title into 0-9, A-Z or #.
  *
  * Leading articles are not stripped: ROM titles are proper nouns and users look
- * for them under their literal first letter.
+ * for them under their literal first letter. A leading "Download" verb, however,
+ * is stripped (see ts_az_index_title) so those posts do not all pile up under D.
  *
  * @param string $title Post title.
  * @return string Bucket key.
  */
 function ts_az_letter( $title ) {
-	$t = remove_accents( wp_strip_all_tags( (string) $title ) );
+	$t = ts_az_index_title( $title );
 	// Drop leading punctuation/whitespace so "[Prototype]" files under P.
 	$t = ltrim( $t, " \t\n\r\0\x0B\"'`([{<-–—_*.#!¡¿" );
 
@@ -110,7 +134,7 @@ add_action( 'untrashed_post', 'ts_az_flush_cache' );
  * @return array
  */
 function ts_az_get_index( $types ) {
-	$key    = 'ts_az_idx_' . ts_az_cache_version() . '_' . substr( md5( implode( ',', $types ) ), 0, 12 );
+	$key    = 'ts_az_idx_' . TS_AZ_VERSION . '_' . ts_az_cache_version() . '_' . substr( md5( implode( ',', $types ) ), 0, 12 );
 	$cached = get_transient( $key );
 	if ( is_array( $cached ) ) {
 		return $cached;
@@ -152,6 +176,19 @@ function ts_az_get_index( $types ) {
 			't' => $title,
 			'u' => get_permalink( $id ),
 		);
+	}
+
+	// WP_Query ordered by the raw title, which clumps every "Download …" entry
+	// together inside each bucket. Re-sort each bucket by the indexing title so
+	// items read alphabetically by their real name.
+	foreach ( $groups as $bucket => $rows ) {
+		usort(
+			$rows,
+			function ( $a, $b ) {
+				return strcasecmp( ts_az_index_title( $a['t'] ), ts_az_index_title( $b['t'] ) );
+			}
+		);
+		$groups[ $bucket ] = $rows;
 	}
 
 	set_transient( $key, $groups, DAY_IN_SECONDS );
