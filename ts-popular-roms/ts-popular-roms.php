@@ -5,7 +5,7 @@
  *              Choose the ROMs in Settings -> Popular ROMs (search & add, drag to reorder). Renders a
  *              responsive card grid with cover, title, genre and download count, plus ItemList JSON-LD for SEO.
  *              Also available as the [popular_roms] shortcode.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -255,16 +255,26 @@ function ts_pr_render() {
 	?>
 	<section class="ts-pr" aria-labelledby="ts-pr-title">
 		<div class="ts-pr-head">
-			<h2 class="ts-pr-title" id="ts-pr-title">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-				<?php echo esc_html( $s['heading'] ?: 'Popular ROMs' ); ?>
-			</h2>
-			<?php if ( ! empty( $s['subheading'] ) ) : ?>
-				<p class="ts-pr-sub"><?php echo esc_html( $s['subheading'] ); ?></p>
-			<?php endif; ?>
+			<div class="ts-pr-headtext">
+				<h2 class="ts-pr-title" id="ts-pr-title">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+					<?php echo esc_html( $s['heading'] ?: 'Popular ROMs' ); ?>
+				</h2>
+				<?php if ( ! empty( $s['subheading'] ) ) : ?>
+					<p class="ts-pr-sub"><?php echo esc_html( $s['subheading'] ); ?></p>
+				<?php endif; ?>
+			</div>
+			<div class="ts-pr-nav" hidden>
+				<button type="button" class="ts-pr-arrow ts-pr-prev" aria-label="Scroll to previous ROMs" disabled>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg>
+				</button>
+				<button type="button" class="ts-pr-arrow ts-pr-next" aria-label="Scroll to next ROMs">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></svg>
+				</button>
+			</div>
 		</div>
 
-		<div class="ts-pr-grid">
+		<div class="ts-pr-track">
 			<?php
 			$rank = 0;
 			while ( $q->have_posts() ) : $q->the_post();
@@ -360,12 +370,25 @@ function ts_pr_styles() {
 	?>
 	<style id="ts-pr-styles">
 	.ts-pr{grid-column:1 / -1;flex-basis:100%;width:100%;box-sizing:border-box;max-width:1180px;margin:30px auto;}
-	.ts-pr-head{margin:0 0 16px;}
+	.ts-pr-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 0 16px;}
 	.ts-pr-title{display:flex;align-items:center;gap:9px;font-size:24px;font-weight:800;color:#101828;margin:0;}
 	.ts-pr-title svg{width:22px;height:22px;color:#e8394c;flex:0 0 auto;}
 	.ts-pr-sub{margin:4px 0 0;color:#667085;font-size:14px;}
-	.ts-pr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;}
-	.ts-pr-card{display:flex;flex-direction:column;text-decoration:none;color:#101828;background:#fff;
+	.ts-pr-nav{display:flex;gap:8px;flex:0 0 auto;}
+	.ts-pr-nav[hidden]{display:none;}
+	.ts-pr-arrow{width:38px;height:38px;border-radius:50%;border:1px solid #e2e4e8;background:#fff;color:#101828;
+		display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s ease,border-color .15s ease,opacity .15s ease;}
+	.ts-pr-arrow svg{width:20px;height:20px;}
+	.ts-pr-arrow:hover:not(:disabled){background:#e8394c;border-color:#e8394c;color:#fff;}
+	.ts-pr-arrow:disabled{opacity:.4;cursor:default;}
+
+	/* Single horizontal row; arrows scroll it. */
+	.ts-pr-track{display:flex;gap:16px;overflow-x:auto;scroll-behavior:smooth;scroll-snap-type:x proximity;
+		-webkit-overflow-scrolling:touch;padding:2px 2px 10px;scrollbar-width:thin;}
+	.ts-pr-track::-webkit-scrollbar{height:8px;}
+	.ts-pr-track::-webkit-scrollbar-thumb{background:#d0d5dd;border-radius:999px;}
+	.ts-pr-track::-webkit-scrollbar-track{background:transparent;}
+	.ts-pr-card{flex:0 0 165px;scroll-snap-align:start;display:flex;flex-direction:column;text-decoration:none;color:#101828;background:#fff;
 		border:1px solid #e8e8ea;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(16,24,40,.05);
 		transition:border-color .15s ease,box-shadow .15s ease,transform .05s ease;}
 	.ts-pr-card:hover{border-color:#f1c2c8;box-shadow:0 8px 22px rgba(16,24,40,.12);transform:translateY(-2px);}
@@ -382,9 +405,61 @@ function ts_pr_styles() {
 		text-transform:uppercase;letter-spacing:.3px;}
 	.ts-pr-dl{font-size:12px;font-weight:700;color:#667085;}
 	@media (max-width:560px){
-		.ts-pr-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;}
+		.ts-pr-card{flex-basis:140px;}
 		.ts-pr-title{font-size:20px;}
 	}
 	</style>
 	<?php
 }
+
+/* ==========================================================
+ * CAROUSEL SCRIPT (prev/next arrows)
+ * ========================================================== */
+add_action( 'wp_footer', function () {
+	if ( is_admin() ) {
+		return;
+	}
+	?>
+	<script id="ts-pr-js">
+	(function(){
+		var sections = document.querySelectorAll('.ts-pr');
+		if (!sections.length) return;
+
+		Array.prototype.forEach.call(sections, function(sec){
+			var track = sec.querySelector('.ts-pr-track');
+			var nav   = sec.querySelector('.ts-pr-nav');
+			var prev  = sec.querySelector('.ts-pr-prev');
+			var next  = sec.querySelector('.ts-pr-next');
+			if (!track || !nav) return;
+
+			function overflowing(){ return track.scrollWidth - track.clientWidth > 4; }
+
+			function update(){
+				if (!overflowing()){ nav.hidden = true; return; }
+				nav.hidden = false;
+				var max = track.scrollWidth - track.clientWidth;
+				if (prev) prev.disabled = track.scrollLeft <= 1;
+				if (next) next.disabled = track.scrollLeft >= max - 1;
+			}
+
+			function step(){
+				// Scroll by ~one card width * how many are visible, minus a peek.
+				var card = track.querySelector('.ts-pr-card');
+				var cardW = card ? card.getBoundingClientRect().width + 16 : 180;
+				var visible = Math.max(1, Math.floor(track.clientWidth / cardW));
+				return Math.max(cardW, (visible - 1) * cardW);
+			}
+
+			if (prev) prev.addEventListener('click', function(){ track.scrollBy({ left: -step(), behavior:'smooth' }); });
+			if (next) next.addEventListener('click', function(){ track.scrollBy({ left:  step(), behavior:'smooth' }); });
+			track.addEventListener('scroll', update, { passive:true });
+			window.addEventListener('resize', update);
+			// Images load late; recheck once they do.
+			window.addEventListener('load', update);
+			setTimeout(update, 150);
+			update();
+		});
+	})();
+	</script>
+	<?php
+} );
