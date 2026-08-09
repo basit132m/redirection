@@ -5,7 +5,7 @@
  *              All links are rendered server-side (crawlable), grouped under letter headings with
  *              anchor navigation, plus CollectionPage/ItemList structured data. The search box only
  *              filters markup that is already in the DOM, so nothing is hidden from search engines.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -36,18 +36,52 @@ function ts_az_default_types() {
  * ========================================================== */
 
 /**
- * Bucket a title into 0-9, A-Z or #.
+ * Leading prefixes to ignore when alphabetising (case-insensitive, whole word).
  *
- * Leading articles are not stripped: ROM titles are proper nouns and users look
- * for them under their literal first letter.
+ * Many ROM posts are titled "Download <Game> Switch NSP", which would otherwise
+ * dump every one of them under the letter D. Strip that lead-in so titles file
+ * under their real first letter.
+ *
+ * @return string[]
+ */
+function ts_az_strip_prefixes() {
+	return apply_filters( 'ts_az_strip_prefixes', array( 'download' ) );
+}
+
+/**
+ * Normalise a title for alphabetising: strip tags/accents, leading punctuation,
+ * and a leading ignored prefix (e.g. "Download ").
+ *
+ * @param string $title Post title.
+ * @return string Normalised title used for bucketing and sorting.
+ */
+function ts_az_norm_title( $title ) {
+	$trim = " \t\n\r\0\x0B\"'`([{<-–—_*.#!¡¿";
+	$t    = remove_accents( wp_strip_all_tags( (string) $title ) );
+	$t    = ltrim( $t, $trim );
+
+	$prefixes = ts_az_strip_prefixes();
+	if ( ! empty( $prefixes ) ) {
+		$escaped = implode( '|', array_map( function ( $p ) { return preg_quote( trim( $p ), '/' ); }, $prefixes ) );
+		if ( '' !== $escaped ) {
+			// Remove one leading "<prefix> " (requires trailing whitespace, so a
+			// title that is exactly "Download" is left alone).
+			$t = preg_replace( '/^(?:' . $escaped . ')\s+/i', '', $t, 1 );
+			$t = ltrim( $t, $trim );
+		}
+	}
+
+	return $t;
+}
+
+/**
+ * Bucket a title into 0-9, A-Z or #, ignoring a leading "Download " prefix.
  *
  * @param string $title Post title.
  * @return string Bucket key.
  */
 function ts_az_letter( $title ) {
-	$t = remove_accents( wp_strip_all_tags( (string) $title ) );
-	// Drop leading punctuation/whitespace so "[Prototype]" files under P.
-	$t = ltrim( $t, " \t\n\r\0\x0B\"'`([{<-–—_*.#!¡¿" );
+	$t = ts_az_norm_title( $title );
 
 	if ( '' === $t ) {
 		return '#';
@@ -110,7 +144,7 @@ add_action( 'untrashed_post', 'ts_az_flush_cache' );
  * @return array
  */
 function ts_az_get_index( $types ) {
-	$key    = 'ts_az_idx_' . ts_az_cache_version() . '_' . substr( md5( implode( ',', $types ) ), 0, 12 );
+	$key    = 'ts_az_idx_v2_' . ts_az_cache_version() . '_' . substr( md5( implode( ',', $types ) ), 0, 12 );
 	$cached = get_transient( $key );
 	if ( is_array( $cached ) ) {
 		return $cached;
@@ -151,7 +185,20 @@ function ts_az_get_index( $types ) {
 		$groups[ ts_az_letter( $title ) ][] = array(
 			't' => $title,
 			'u' => get_permalink( $id ),
+			's' => ts_az_norm_title( $title ), // sort key (ignores "Download " lead-in)
 		);
+	}
+
+	// Sort each bucket by the normalised title so "Download A …" items order by
+	// their real name, not by the word "Download".
+	foreach ( $groups as $bucket => $rows ) {
+		usort(
+			$rows,
+			function ( $a, $b ) {
+				return strcasecmp( $a['s'], $b['s'] );
+			}
+		);
+		$groups[ $bucket ] = $rows;
 	}
 
 	set_transient( $key, $groups, DAY_IN_SECONDS );
