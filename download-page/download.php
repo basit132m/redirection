@@ -24,19 +24,18 @@ $ALLOWED_SOURCES = array(
 	// key = the "Source ID" set in WP -> Settings -> TS Download Box
 	// value = that WordPress site's base URL (no trailing slash).
 	'nspvault' => 'https://www.nspvault.com',
-	// Add each site this download.php serves, e.g. for the LG site:
-	// 'lg' => 'https://your-lg-wordpress-site.com',
+	'lg'       => 'https://lewd-game.com',
 );
 // The source used when the button link has no &s= parameter. Point this at the
 // WordPress site that owns the games shown on THIS download domain.
-$DEFAULT_SOURCE = 'nspvault';
+$DEFAULT_SOURCE = 'lg';
 
 // Seconds the timer bar runs before links are revealed.
 $TIMER_SECONDS = 10;
 
 // Set to true temporarily to see the exact reason on the error screen
 // (which endpoint was called and the HTTP status). Turn OFF in production.
-$DEBUG = false;
+$DEBUG = true;
 
 /* ------------------------------------------------------------------ */
 
