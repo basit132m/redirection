@@ -132,61 +132,102 @@ $title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 <meta name="robots" content="noindex, nofollow, noarchive">
 <title><?php echo htmlspecialchars( $title, ENT_QUOTES ); ?> — Download</title>
 <style>
-	:root{ --red:#e8394c; --red-dark:#cf2a3c; --ink:#1a1a1a; --muted:#6b7280; --line:#ececec; --card:#fafafa; }
+	:root{
+		--accent:#e8394c; --accent2:#ff6a5a; --accent-soft:#fff1f2;
+		--ink:#0f172a; --muted:#64748b; --line:#eceef3; --card:#ffffff;
+		--ok:#15803d; --ok-soft:#ecfdf3; --ok-line:#d1fadf;
+		--radius:20px; --shadow:0 12px 34px rgba(15,23,42,.08);
+	}
 	*{ box-sizing:border-box; }
 	html,body{ margin:0; padding:0; }
-	/* Background is always white, per requirement. */
-	body{ background:#ffffff; color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.5; }
-	.wrap{ max-width:760px; margin:0 auto; padding:28px 18px 60px; }
+	body{
+		color:var(--ink); line-height:1.55;
+		font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+		background:#f5f7fc;
+		background:
+			radial-gradient(900px 500px at 12% -8%, #eef2ff 0%, rgba(238,242,255,0) 60%),
+			radial-gradient(900px 500px at 100% 0%, #fff1f2 0%, rgba(255,241,242,0) 55%),
+			linear-gradient(180deg, #f7f9fe 0%, #eef1f8 100%);
+		min-height:100vh;
+	}
+	.wrap{ max-width:720px; margin:0 auto; padding:34px 18px 64px; }
 
-	/* Game info card: featured image + details */
-	.ginfo{ display:flex; gap:22px; align-items:flex-start; border:1px solid var(--line); border-radius:16px; padding:20px 22px; margin-bottom:26px; background:var(--card); }
-	.ginfo-img{ flex:0 0 auto; width:210px; max-width:42%; }
-	.ginfo-img img{ width:100%; height:auto; border-radius:12px; display:block; }
+	.brandbar{ display:flex; align-items:center; justify-content:center; gap:8px; color:var(--muted); font-size:13px; font-weight:600; margin:0 0 22px; }
+	.brandbar svg{ width:16px; height:16px; color:var(--accent); }
+
+	.card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+
+	/* Game info */
+	.ginfo{ display:flex; gap:22px; align-items:flex-start; padding:22px; margin-bottom:22px; position:relative; overflow:hidden; }
+	.ginfo::before{ content:""; position:absolute; inset:0 0 auto 0; height:5px; background:linear-gradient(90deg,var(--accent),var(--accent2)); }
+	.ginfo-img{ flex:0 0 auto; width:220px; max-width:42%; }
+	.ginfo-img img{ width:100%; height:auto; border-radius:14px; display:block; box-shadow:0 10px 26px rgba(15,23,42,.16); }
 	.ginfo-meta{ flex:1; min-width:0; }
-	.ginfo-meta h1{ font-size:22px; margin:0 0 14px; font-weight:800; }
+	.ginfo-meta h1{ font-size:23px; line-height:1.25; margin:2px 0 14px; font-weight:800; letter-spacing:-.01em; }
 	.ginfo-meta ul{ list-style:none; margin:0; padding:0; }
-	.ginfo-meta li{ display:flex; justify-content:space-between; gap:14px; padding:9px 0; border-bottom:1px solid var(--line); }
+	.ginfo-meta li{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 0; border-bottom:1px solid var(--line); }
 	.ginfo-meta li:last-child{ border-bottom:0; }
 	.ginfo-meta li > span{ color:var(--muted); font-size:14px; }
-	.ginfo-meta li > strong{ font-size:14px; text-align:right; word-break:break-word; }
+	.ginfo-meta li > strong{ font-size:14px; text-align:right; word-break:break-word; font-weight:700; }
+	.pill{ padding:3px 10px; border-radius:999px; font-size:12.5px; font-weight:800; }
+	.pill-size{ color:var(--accent); background:var(--accent-soft); }
+	.pill-ver{ color:var(--ok); background:var(--ok-soft); border:1px solid var(--ok-line); }
+	.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; letter-spacing:.02em; color:#334155; }
 	@media (max-width:600px){ .ginfo{ flex-direction:column; } .ginfo-img{ width:100%; max-width:100%; } }
 
-	/* Timer card */
-	.timer{ text-align:center; border:1px solid var(--line); border-radius:16px; padding:34px 20px; margin-bottom:26px; background:var(--card); }
-	.timer .lead{ font-weight:700; font-size:18px; margin-bottom:16px; }
-	.timer .count{ font-size:34px; font-weight:800; color:var(--red); margin-bottom:16px; }
-	.bar{ height:12px; background:#eee; border-radius:999px; overflow:hidden; max-width:420px; margin:0 auto; }
-	.bar > span{ display:block; height:100%; width:0%; background:var(--red); border-radius:999px; transition:width 1s linear; }
-	.timer .note{ color:var(--muted); font-size:13px; margin-top:14px; }
+	/* Countdown */
+	.timer{ text-align:center; padding:34px 20px; margin-bottom:22px; }
+	.ring{ position:relative; width:132px; height:132px; margin:0 auto 16px; }
+	.ring svg{ width:132px; height:132px; transform:rotate(-90deg); }
+	.ring .track{ fill:none; stroke:#eef1f6; stroke-width:10; }
+	.ring .prog{ fill:none; stroke:url(#g); stroke-width:10; stroke-linecap:round; stroke-dasharray:326.726; stroke-dashoffset:0; }
+	.ring .num{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:800; color:var(--ink); }
+	.timer .lead{ font-weight:800; font-size:19px; margin:2px 0 4px; }
+	.timer .note{ color:var(--muted); font-size:13.5px; }
 
 	/* Links */
 	#links{ display:none; }
-	.section{ border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:18px; }
-	.section > h2{ margin:0; padding:14px 18px; font-size:16px; background:#f4f4f4; border-bottom:1px solid var(--line); }
+	#links.show{ display:block; animation:fade .35s ease both; }
+	@keyframes fade{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none; } }
+	.section{ margin-bottom:18px; overflow:hidden; }
+	.section > h2{ margin:0; padding:15px 20px; font-size:15px; font-weight:800; display:flex; align-items:center; gap:9px; color:#0f172a; border-bottom:1px solid var(--line); }
+	.section > h2 svg{ width:17px; height:17px; color:var(--accent); }
 	.rows{ display:flex; flex-direction:column; }
-	.row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; text-decoration:none; color:var(--ink); border-bottom:1px solid var(--line); transition:background .15s; }
+	.row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 20px; text-decoration:none; color:var(--ink); border-bottom:1px solid var(--line); transition:background .16s ease; }
 	.row:last-child{ border-bottom:0; }
-	.row:hover{ background:#fdf2f4; }
-	.row .left{ display:flex; align-items:center; gap:12px; min-width:0; }
-	.row .dot{ width:34px; height:34px; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; flex:0 0 auto; }
-	.row .label{ font-weight:700; font-size:15px; }
-	.row .right{ display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; }
-	.row .chev{ color:var(--red); font-size:18px; }
+	.row:hover{ background:var(--accent-soft); }
+	.row .left{ display:flex; align-items:center; gap:13px; min-width:0; }
+	.row .dot{ width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; display:flex; align-items:center; justify-content:center; flex:0 0 auto; box-shadow:0 6px 14px rgba(232,57,76,.30); }
+	.row .dot svg{ width:19px; height:19px; }
+	.row .label{ font-weight:800; font-size:15px; }
+	.row .sub{ font-size:12.5px; color:var(--muted); }
+	.row .right{ display:flex; align-items:center; gap:9px; }
+	.badge{ font-size:11.5px; font-weight:800; color:#475569; background:#f1f5f9; border:1px solid #e6eaf1; border-radius:999px; padding:3px 10px; white-space:nowrap; }
+	.badge-type{ color:var(--accent); background:var(--accent-soft); border-color:#fbdfe3; text-transform:uppercase; letter-spacing:.3px; }
+	.row .chev{ color:#cbd5e1; flex:0 0 auto; }
+	.row:hover .chev{ color:var(--accent); }
 
-	.err{ text-align:center; border:1px solid var(--line); border-radius:14px; padding:40px 20px; color:var(--muted); }
-	.footer{ text-align:center; color:var(--muted); font-size:12px; margin-top:30px; }
-	@media (max-width:480px){ .row{ flex-direction:row; } .row .right .type{ display:none; } }
+	.trust{ display:flex; align-items:center; justify-content:center; gap:8px; color:var(--muted); font-size:12.5px; font-weight:600; margin:20px 0 0; }
+	.trust svg{ width:15px; height:15px; color:var(--ok); }
+
+	.err{ text-align:center; padding:44px 22px; color:var(--muted); font-size:15px; }
+	.footer{ text-align:center; color:#94a3b8; font-size:12.5px; margin-top:26px; }
+	@media (max-width:480px){ .row .right .badge-type{ display:none; } }
 </style>
 </head>
 <body>
 <div class="wrap">
 
+	<div class="brandbar">
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>
+		Secure download portal
+	</div>
+
 	<?php if ( $error ) : ?>
-		<div class="err"><?php echo htmlspecialchars( $error, ENT_QUOTES ); ?></div>
+		<div class="card err"><?php echo htmlspecialchars( $error, ENT_QUOTES ); ?></div>
 	<?php else : ?>
 
-		<div class="ginfo">
+		<div class="card ginfo">
 			<?php if ( $image ) : ?>
 				<div class="ginfo-img"><img src="<?php echo htmlspecialchars( $image, ENT_QUOTES ); ?>" alt="<?php echo htmlspecialchars( $title, ENT_QUOTES ); ?>"></div>
 			<?php endif; ?>
@@ -194,44 +235,63 @@ $title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 				<h1><?php echo htmlspecialchars( $title, ENT_QUOTES ); ?></h1>
 				<ul>
 					<?php if ( $genre ) : ?><li><span>Genre</span><strong><?php echo htmlspecialchars( $genre, ENT_QUOTES ); ?></strong></li><?php endif; ?>
-					<?php if ( $tsize ) : ?><li><span>Game Size</span><strong><?php echo htmlspecialchars( $tsize, ENT_QUOTES ); ?></strong></li><?php endif; ?>
-					<?php if ( $version ) : ?><li><span>Version</span><strong><?php echo htmlspecialchars( $version, ENT_QUOTES ); ?></strong></li><?php endif; ?>
-					<?php if ( $title_id ) : ?><li><span>Title ID</span><strong><?php echo htmlspecialchars( $title_id, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $tsize ) : ?><li><span>Game Size</span><strong class="pill pill-size"><?php echo htmlspecialchars( $tsize, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $version ) : ?><li><span>Version</span><strong class="pill pill-ver"><?php echo htmlspecialchars( $version, ENT_QUOTES ); ?></strong></li><?php endif; ?>
+					<?php if ( $title_id ) : ?><li><span>Title ID</span><strong class="mono"><?php echo htmlspecialchars( $title_id, ENT_QUOTES ); ?></strong></li><?php endif; ?>
 					<li><span>Files</span><strong><?php echo (int) $files; ?></strong></li>
 				</ul>
 			</div>
 		</div>
 
-		<!-- Timer -->
-		<div class="timer" id="timer">
+		<!-- Countdown -->
+		<div class="card timer" id="timer">
+			<div class="ring">
+				<svg viewBox="0 0 120 120">
+					<defs><linearGradient id="g" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+						<stop offset="0" stop-color="#e8394c"/><stop offset="1" stop-color="#ff6a5a"/>
+					</linearGradient></defs>
+					<circle class="track" cx="60" cy="60" r="52"/>
+					<circle class="prog" id="ring" cx="60" cy="60" r="52"/>
+				</svg>
+				<span class="num" id="count"><?php echo (int) $TIMER_SECONDS; ?></span>
+			</div>
 			<div class="lead">Preparing your download…</div>
-			<div class="count"><span id="count"><?php echo (int) $TIMER_SECONDS; ?></span></div>
-			<div class="bar"><span id="barfill"></span></div>
 			<div class="note">Your links will appear automatically.</div>
 		</div>
 
 		<!-- Links (revealed after timer) -->
 		<div id="links">
 			<?php foreach ( dl_group( $data['links'] ) as $section => $rows ) : ?>
-				<div class="section">
-					<h2><?php echo htmlspecialchars( $section, ENT_QUOTES ); ?></h2>
+				<div class="card section">
+					<h2>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+						<?php echo htmlspecialchars( $section, ENT_QUOTES ); ?>
+					</h2>
 					<div class="rows">
 						<?php foreach ( $rows as $link ) : ?>
 							<a class="row" href="<?php echo htmlspecialchars( $link['url'], ENT_QUOTES ); ?>" target="_blank" rel="nofollow noopener">
 								<span class="left">
-									<span class="dot">&#8681;</span>
-									<span class="label"><?php echo htmlspecialchars( $link['title'] ?: 'Download', ENT_QUOTES ); ?></span>
+									<span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg></span>
+									<span>
+										<span class="label"><?php echo htmlspecialchars( $link['title'] ?: 'Download', ENT_QUOTES ); ?></span>
+										<span class="sub">Click to download</span>
+									</span>
 								</span>
 								<span class="right">
-									<?php if ( ! empty( $link['type'] ) ) : ?><span class="type"><?php echo htmlspecialchars( $link['type'], ENT_QUOTES ); ?></span><?php endif; ?>
-									<?php if ( ! empty( $link['size'] ) ) : ?><span><?php echo htmlspecialchars( $link['size'], ENT_QUOTES ); ?></span><?php endif; ?>
-									<span class="chev">&rsaquo;</span>
+									<?php if ( ! empty( $link['type'] ) ) : ?><span class="badge badge-type"><?php echo htmlspecialchars( $link['type'], ENT_QUOTES ); ?></span><?php endif; ?>
+									<?php if ( ! empty( $link['size'] ) ) : ?><span class="badge"><?php echo htmlspecialchars( $link['size'], ENT_QUOTES ); ?></span><?php endif; ?>
+									<span class="chev"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
 								</span>
 							</a>
 						<?php endforeach; ?>
 					</div>
 				</div>
 			<?php endforeach; ?>
+
+			<div class="trust">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+				Links verified &amp; safe to download
+			</div>
 		</div>
 
 		<div class="footer">If a download doesn’t start, disable your ad-blocker and try again.</div>
@@ -240,15 +300,16 @@ $title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 		(function(){
 			var total = <?php echo (int) $TIMER_SECONDS; ?>;
 			var left  = total;
+			var C = 326.726; // 2·π·r (r=52)
 			var countEl = document.getElementById('count');
-			var barEl   = document.getElementById('barfill');
+			var ringEl  = document.getElementById('ring');
 			var timerEl = document.getElementById('timer');
 			var linksEl = document.getElementById('links');
 
-			// Kick the bar to 100% over the full duration.
+			// Deplete the ring smoothly over the full duration.
 			requestAnimationFrame(function(){
-				barEl.style.transition = 'width ' + total + 's linear';
-				barEl.style.width = '100%';
+				ringEl.style.transition = 'stroke-dashoffset ' + total + 's linear';
+				ringEl.style.strokeDashoffset = C;
 			});
 
 			var iv = setInterval(function(){
@@ -257,7 +318,7 @@ $title_id = $data && ! empty( $data['title_id'] ) ? $data['title_id'] : '';
 					clearInterval(iv);
 					countEl.textContent = '0';
 					timerEl.style.display = 'none';
-					linksEl.style.display = 'block';
+					linksEl.classList.add('show');
 					return;
 				}
 				countEl.textContent = left;
