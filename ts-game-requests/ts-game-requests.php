@@ -5,7 +5,7 @@
  *              (Name, Version, Format, details, optional email). Requests are stored and managed under a
  *              "Game Requests" admin screen with a new-request notification count, status (New/Done),
  *              filters and delete. Optional email notification to the admin on each new request.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -60,6 +60,8 @@ function ts_req_defaults() {
 	return array(
 		'intro'         => 'Can\'t find a game? Request it below and we\'ll try to add it.',
 		'success'       => 'Thanks! Your request has been submitted. We\'ll do our best to add it soon.',
+		'format_label'  => 'Format',
+		'format_ph'     => 'NSP, XCI, NSZ…',
 		'notify'        => 0,
 		'notify_email'  => get_option( 'admin_email' ),
 	);
@@ -112,8 +114,8 @@ function ts_req_render_form() {
 					<input type="text" name="version" maxlength="100" placeholder="e.g. v1.3.0">
 				</label>
 				<label class="ts-req-field">
-					<span>Format <span class="ts-req-opt">(optional)</span></span>
-					<input type="text" name="platform" maxlength="100" placeholder="NSP, XCI, NSZ…">
+					<span><?php echo esc_html( $s['format_label'] ?: 'Format' ); ?> <span class="ts-req-opt">(optional)</span></span>
+					<input type="text" name="platform" maxlength="100" placeholder="<?php echo esc_attr( $s['format_ph'] ); ?>">
 				</label>
 				<label class="ts-req-field ts-req-col2">
 					<span>Your Email <span class="ts-req-opt">(optional, for updates)</span></span>
@@ -354,6 +356,7 @@ function ts_req_admin_page() {
 	}
 	global $wpdb;
 	$table = ts_req_table();
+	$s     = ts_req_get_settings();
 
 	if ( $notice = get_transient( 'ts_req_notice' ) ) {
 		delete_transient( 'ts_req_notice' );
@@ -419,7 +422,7 @@ function ts_req_admin_page() {
 						<th style="width:70px;">Done</th>
 						<th>Game</th>
 						<th style="width:110px;">Version</th>
-						<th style="width:110px;">Format</th>
+						<th style="width:110px;"><?php echo esc_html( $s['format_label'] ?: 'Format' ); ?></th>
 						<th>Details</th>
 						<th style="width:170px;">Contact</th>
 						<th style="width:150px;">Received</th>
@@ -485,6 +488,8 @@ function ts_req_settings_page() {
 		$s                 = ts_req_get_settings();
 		$s['intro']        = isset( $_POST['intro'] ) ? sanitize_text_field( wp_unslash( $_POST['intro'] ) ) : '';
 		$s['success']      = isset( $_POST['success'] ) ? sanitize_text_field( wp_unslash( $_POST['success'] ) ) : '';
+		$s['format_label'] = isset( $_POST['format_label'] ) && '' !== trim( wp_unslash( $_POST['format_label'] ) ) ? sanitize_text_field( wp_unslash( $_POST['format_label'] ) ) : 'Format';
+		$s['format_ph']    = isset( $_POST['format_ph'] ) ? sanitize_text_field( wp_unslash( $_POST['format_ph'] ) ) : '';
 		$s['notify']       = isset( $_POST['notify'] ) ? 1 : 0;
 		$s['notify_email'] = isset( $_POST['notify_email'] ) ? sanitize_email( wp_unslash( $_POST['notify_email'] ) ) : get_option( 'admin_email' );
 		update_option( 'ts_req_settings', $s );
@@ -506,6 +511,14 @@ function ts_req_settings_page() {
 				<tr>
 					<th scope="row"><label for="success">Success message</label></th>
 					<td><input name="success" id="success" type="text" class="large-text" value="<?php echo esc_attr( $s['success'] ); ?>"></td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="format_label">Format / Platform field</label></th>
+					<td>
+						<input name="format_label" id="format_label" type="text" class="regular-text" value="<?php echo esc_attr( $s['format_label'] ); ?>" placeholder="Format">
+						<input name="format_ph" type="text" class="regular-text" value="<?php echo esc_attr( $s['format_ph'] ); ?>" placeholder="NSP, XCI, NSZ…">
+						<p class="description">The label and example text for the third field. e.g. label <code>Platform</code>, examples <code>Windows, Android, macOS</code>.</p>
+					</td>
 				</tr>
 				<tr>
 					<th scope="row">Email notification</th>
