@@ -4,7 +4,7 @@
  * Description: Game information card for the LG site. Landscape 400x225 cover, a trimmed info list
  *              (Genre, Developer, Version, File Size, Language) and a public "Platform" taxonomy so each
  *              platform gets its own archive (e.g. /games/windows/). Includes VideoGame JSON-LD.
- * Version: 1.1
+ * Version: 1.2
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -148,7 +148,6 @@ function lg_gi_fields() {
 		'lg_version'   => 'Version',
 		'lg_filesize'  => 'File Size',
 		'lg_language'  => 'Language',
-		'lg_download'  => 'Download URL',
 		'lg_official'  => 'Official Site URL',
 	);
 }
@@ -174,7 +173,7 @@ function lg_gi_meta_box_html( $post ) {
 	echo '<table class="form-table">';
 	foreach ( lg_gi_fields() as $key => $label ) {
 		$val  = get_post_meta( $post->ID, $key, true );
-		$type = ( in_array( $key, array( 'lg_download', 'lg_official' ), true ) ) ? 'url' : 'text';
+		$type = ( 'lg_official' === $key ) ? 'url' : 'text';
 		printf(
 			'<tr><th><label for="%1$s">%2$s</label></th><td><input type="%3$s" id="%1$s" name="%1$s" value="%4$s" style="width:100%%;"></td></tr>',
 			esc_attr( $key ),
@@ -202,7 +201,7 @@ add_action( 'save_post', function ( $post_id ) {
 			continue;
 		}
 		$raw = wp_unslash( $_POST[ $key ] );
-		if ( in_array( $key, array( 'lg_download', 'lg_official' ), true ) ) {
+		if ( 'lg_official' === $key ) {
 			update_post_meta( $post_id, $key, esc_url_raw( trim( $raw ) ) );
 		} else {
 			update_post_meta( $post_id, $key, sanitize_text_field( $raw ) );
@@ -225,7 +224,6 @@ function lg_gi_render( $post_id ) {
 	$version   = get_post_meta( $post_id, 'lg_version', true );
 	$filesize  = get_post_meta( $post_id, 'lg_filesize', true );
 	$language  = get_post_meta( $post_id, 'lg_language', true );
-	$download  = get_post_meta( $post_id, 'lg_download', true );
 	$official  = get_post_meta( $post_id, 'lg_official', true );
 
 	$genre     = get_the_category_list( ', ', '', $post_id );
@@ -243,12 +241,11 @@ function lg_gi_render( $post_id ) {
 				<div class="lg-gi-cover"><img src="<?php echo esc_url( $cover ); ?>" alt="<?php echo esc_attr( get_the_title( $post_id ) ); ?>" loading="eager" width="400" height="225"></div>
 			<?php endif; ?>
 			<div class="lg-gi-actions">
-				<?php if ( $download ) : ?>
-					<a class="lg-gi-btn" href="<?php echo esc_url( $download ); ?>" target="_blank" rel="nofollow noopener">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-						Download Now
-					</a>
-				<?php endif; ?>
+				<?php // Download links come from the Download Box section; this button jumps to it. ?>
+				<a class="lg-gi-btn" href="#ts-downloads">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+					Download Now
+				</a>
 				<?php if ( $official && filter_var( $official, FILTER_VALIDATE_URL ) ) : ?>
 					<a class="lg-gi-official" href="<?php echo esc_url( $official ); ?>" target="_blank" rel="nofollow noopener">Official Site</a>
 				<?php endif; ?>
@@ -358,6 +355,8 @@ function lg_gi_styles() {
 	$done = true;
 	?>
 	<style id="lg-gi-styles">
+	html{scroll-behavior:smooth;}
+	#ts-downloads{scroll-margin-top:80px;}
 	.lg-gi-card{display:flex;flex-direction:column;gap:22px;background:#fff;border:1px solid #e8e8ea;border-radius:16px;
 		padding:22px 24px;margin:0 0 26px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
 	.lg-gi-media{flex:0 0 auto;display:flex;flex-direction:column;gap:12px;}
