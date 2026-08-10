@@ -21,14 +21,22 @@ if ( ! headers_sent() ) {
 }
 
 $ALLOWED_SOURCES = array(
+	// key = the "Source ID" set in WP -> Settings -> TS Download Box
+	// value = that WordPress site's base URL (no trailing slash).
 	'nspvault' => 'https://www.nspvault.com',
-	// Add more sites here if this same download.php serves them, e.g.
-	// 'repacklabs' => 'https://repacklabs.net',
+	// Add each site this download.php serves, e.g. for the LG site:
+	// 'lg' => 'https://your-lg-wordpress-site.com',
 );
+// The source used when the button link has no &s= parameter. Point this at the
+// WordPress site that owns the games shown on THIS download domain.
 $DEFAULT_SOURCE = 'nspvault';
 
 // Seconds the timer bar runs before links are revealed.
 $TIMER_SECONDS = 10;
+
+// Set to true temporarily to see the exact reason on the error screen
+// (which endpoint was called and the HTTP status). Turn OFF in production.
+$DEBUG = false;
 
 /* ------------------------------------------------------------------ */
 
@@ -48,10 +56,15 @@ if ( $post_id <= 0 ) {
 	$error = 'Unknown source.';
 } else {
 	$endpoint = rtrim( $ALLOWED_SOURCES[ $source_id ], '/' ) . '/wp-json/tsdl/v1/links/' . $post_id;
-	$body     = dl_fetch( $endpoint );
+	$fetch_info = array();
+	$body       = dl_fetch( $endpoint, $fetch_info );
 
 	if ( false === $body ) {
 		$error = 'Could not load download links right now. Please try again shortly.';
+		if ( ! empty( $DEBUG ) ) {
+			$error .= ' [debug: GET ' . $endpoint . ' → HTTP ' . ( isset( $fetch_info['code'] ) ? (int) $fetch_info['code'] : 0 )
+				. ( ! empty( $fetch_info['error'] ) ? ' — ' . $fetch_info['error'] : '' ) . ']';
+		}
 	} else {
 		$decoded = json_decode( $body, true );
 		if ( ! is_array( $decoded ) || empty( $decoded['links'] ) ) {
@@ -68,7 +81,10 @@ if ( $post_id <= 0 ) {
  * @param string $url URL.
  * @return string|false Response body or false on failure.
  */
-function dl_fetch( $url ) {
+function dl_fetch( $url, &$info = array() ) {
+	$info = array( 'code' => 0, 'error' => '' );
+	$ua   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 	if ( function_exists( 'curl_init' ) ) {
 		$ch = curl_init( $url );
 		curl_setopt_array(
@@ -78,27 +94,59 @@ function dl_fetch( $url ) {
 				CURLOPT_FOLLOWLOCATION => true,
 				CURLOPT_TIMEOUT        => 12,
 				CURLOPT_CONNECTTIMEOUT => 6,
-				CURLOPT_USERAGENT      => 'TS-Download-Page/1.0',
+				CURLOPT_USERAGENT      => $ua,
 				CURLOPT_HTTPHEADER     => array( 'Accept: application/json' ),
 			)
 		);
 		$res  = curl_exec( $ch );
-		$code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+		$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+		$cerr = curl_error( $ch );
 		curl_close( $ch );
+
+		$info['code'] = $code;
 		if ( false !== $res && $code >= 200 && $code < 300 ) {
 			return $res;
+		}
+		if ( false === $res ) {
+			$info['error'] = '' !== $cerr ? $cerr : 'request failed (no response)';
+		} else {
+			$info['error'] = 'unexpected HTTP status';
 		}
 		return false;
 	}
 
 	$ctx = stream_context_create(
 		array(
-			'http' => array( 'timeout' => 12, 'header' => "Accept: application/json\r\n" ),
+			'http' => array(
+				'timeout'       => 12,
+				'user_agent'    => $ua,
+				'header'        => "Accept: application/json\r\n",
+				'ignore_errors' => true,
+			),
 			'ssl'  => array( 'verify_peer' => true, 'verify_peer_name' => true ),
 		)
 	);
 	$res = @file_get_contents( $url, false, $ctx );
-	return ( false === $res ) ? false : $res;
+
+	// Parse the HTTP status line from $http_response_header when available.
+	if ( isset( $http_response_header ) && is_array( $http_response_header ) ) {
+		foreach ( $http_response_header as $h ) {
+			if ( preg_match( '#^HTTP/\S+\s+(\d{3})#', $h, $m ) ) {
+				$info['code'] = (int) $m[1];
+			}
+		}
+	}
+
+	if ( false === $res ) {
+		$err            = error_get_last();
+		$info['error']  = ( $err && ! empty( $err['message'] ) ) ? $err['message'] : 'request failed';
+		return false;
+	}
+	if ( $info['code'] && ( $info['code'] < 200 || $info['code'] >= 300 ) ) {
+		$info['error'] = 'unexpected HTTP status';
+		return false;
+	}
+	return $res;
 }
 
 /**
