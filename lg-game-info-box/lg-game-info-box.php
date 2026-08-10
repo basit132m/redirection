@@ -4,7 +4,7 @@
  * Description: Game information card for the LG site. Landscape 400x225 cover, a trimmed info list
  *              (Genre, Developer, Version, File Size, Language) and a public "Platform" taxonomy so each
  *              platform gets its own archive (e.g. /games/windows/). Includes VideoGame JSON-LD.
- * Version: 1.0
+ * Version: 1.1
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -23,15 +23,30 @@ function lg_gi_post_types() {
 }
 
 /**
- * The rewrite base for the Platform taxonomy. Change with the 'lg_platform_slug'
- * filter, e.g. return 'games' -> /games/windows/. Re-save Permalinks after
- * changing it.
+ * Plugin settings (currently just the platform URL base).
+ *
+ * @return array
+ */
+function lg_gi_get_settings() {
+	$s = get_option( 'lg_gi_settings', array() );
+	if ( ! is_array( $s ) ) {
+		$s = array();
+	}
+	return array_merge( array( 'platform_slug' => 'games' ), $s );
+}
+
+/**
+ * The rewrite base for the Platform taxonomy. Set it under Settings -> LG Game
+ * Info (or override with the 'lg_platform_slug' filter). e.g. "games" ->
+ * /games/windows/. Permalinks are flushed automatically when you save it.
  *
  * @return string
  */
 function lg_platform_slug() {
-	$slug = apply_filters( 'lg_platform_slug', 'games' );
-	return trim( (string) $slug, '/' ) ?: 'games';
+	$s    = lg_gi_get_settings();
+	$slug = apply_filters( 'lg_platform_slug', $s['platform_slug'] );
+	$slug = sanitize_title( trim( (string) $slug, '/' ) );
+	return $slug ?: 'games';
 }
 
 /* ==========================================================
@@ -64,6 +79,65 @@ register_activation_hook( __FILE__, function () {
 	flush_rewrite_rules();
 } );
 register_deactivation_hook( __FILE__, 'flush_rewrite_rules' );
+
+/* ---- Settings screen: change the platform URL base ---- */
+add_action( 'admin_menu', function () {
+	add_options_page( 'LG Game Info', 'LG Game Info', 'manage_options', 'lg-game-info', 'lg_gi_settings_page' );
+} );
+
+add_action( 'admin_init', function () {
+	if ( ! isset( $_POST['lg_gi_action'] ) || ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	check_admin_referer( 'lg_gi_settings' );
+
+	$s                  = lg_gi_get_settings();
+	$new                = isset( $_POST['platform_slug'] ) ? sanitize_title( wp_unslash( $_POST['platform_slug'] ) ) : 'games';
+	$s['platform_slug'] = $new ?: 'games';
+	update_option( 'lg_gi_settings', $s );
+
+	// Re-register the taxonomy with the new base and flush so /base/windows/
+	// works immediately — no manual Permalinks re-save needed.
+	lg_gi_register_platform();
+	flush_rewrite_rules();
+
+	set_transient( 'lg_gi_saved', 1, 30 );
+	wp_safe_redirect( admin_url( 'options-general.php?page=lg-game-info' ) );
+	exit;
+} );
+
+function lg_gi_settings_page() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	$s = lg_gi_get_settings();
+	if ( get_transient( 'lg_gi_saved' ) ) {
+		delete_transient( 'lg_gi_saved' );
+		echo '<div class="notice notice-success is-dismissible"><p>Saved. Platform links updated and permalinks flushed.</p></div>';
+	}
+	$home = trailingslashit( home_url( '/' ) );
+	?>
+	<div class="wrap">
+		<h1>LG Game Info</h1>
+		<form method="post" action="">
+			<?php wp_nonce_field( 'lg_gi_settings' ); ?>
+			<input type="hidden" name="lg_gi_action" value="1">
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><label for="platform_slug">Platform URL base</label></th>
+					<td>
+						<code><?php echo esc_html( $home ); ?></code>
+						<input name="platform_slug" id="platform_slug" type="text" class="regular-text code" value="<?php echo esc_attr( $s['platform_slug'] ); ?>" placeholder="games" style="width:160px;">
+						<code>/windows/</code>
+						<p class="description">The word in the platform archive URL — e.g. <code>games</code> &rarr; <code><?php echo esc_html( $home ); ?>games/windows/</code>. Lowercase, no spaces. Saving flushes permalinks automatically.</p>
+					</td>
+				</tr>
+			</table>
+			<?php submit_button( 'Save' ); ?>
+		</form>
+	</div>
+	<?php
+}
 
 /* ==========================================================
  * 2. META FIELDS (Developer, Version, File Size, Language, links)
