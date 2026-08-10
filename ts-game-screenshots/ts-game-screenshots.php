@@ -5,7 +5,7 @@
  *              and a thumbnail filmstrip at the bottom with the active shot highlighted.
  *              Critical grid layout is set via inline styles so theme CSS and CSS optimizers
  *              (LiteSpeed / Autoptimize) cannot override or strip it.
- * Version: 4.1
+ * Version: 4.2
  */
 
 if ( ! defined('ABSPATH') ) exit;
@@ -329,6 +329,7 @@ add_action('wp_footer', function() {
             if (i < 0) i = shots.length - 1;              // wrap around
             if (i >= shots.length) i = 0;
             index = i;
+            lb.classList.remove('is-zoomed');             // reset zoom when the image changes
             imgEl.src = shots[i].full;
             imgEl.alt = shots[i].alt;
             curEl.textContent = i + 1;
@@ -362,6 +363,7 @@ add_action('wp_footer', function() {
 
         function close(){
             lb.classList.remove('is-open');
+            lb.classList.remove('is-zoomed');
             lb.setAttribute('aria-hidden', 'true');
             imgEl.src = '';
             document.body.style.overflow = '';
@@ -380,6 +382,52 @@ add_action('wp_footer', function() {
         nextEl.addEventListener('click', function(e){ e.stopPropagation(); show(index + 1); });
         closeEl.addEventListener('click', close);
 
+        // ----- Zoom the open image to full screen -----
+        var stageEl = lb.querySelector('.ts-ss-lb-stage');
+        var hint = document.createElement('div');
+        hint.id = 'ts-ss-lb-hint';
+        hint.textContent = 'Click image or press Esc to exit';
+        lb.appendChild(hint);
+        var suppressClick = false;
+
+        function isZoomed(){ return lb.classList.contains('is-zoomed'); }
+        function centerScroll(){
+            if (!stageEl) return;
+            stageEl.scrollLeft = (stageEl.scrollWidth  - stageEl.clientWidth)  / 2;
+            stageEl.scrollTop  = (stageEl.scrollHeight - stageEl.clientHeight) / 2;
+        }
+        function zoomIn(){ lb.classList.add('is-zoomed'); requestAnimationFrame(centerScroll); }
+        function zoomOut(){ lb.classList.remove('is-zoomed'); }
+
+        // Click the big image to zoom in; click again to zoom back out.
+        imgEl.addEventListener('click', function(e){
+            e.stopPropagation();
+            if (suppressClick) { suppressClick = false; return; } // ignore the click that ends a drag
+            if (isZoomed()) zoomOut(); else zoomIn();
+        });
+
+        // Drag to pan while zoomed (mouse). Touch uses native scrolling.
+        var panning = false, moved = false, sx = 0, sy = 0, sl = 0, st = 0;
+        stageEl.addEventListener('pointerdown', function(e){
+            if (!isZoomed() || (e.pointerType && e.pointerType !== 'mouse')) return;
+            panning = true; moved = false;
+            sx = e.clientX; sy = e.clientY; sl = stageEl.scrollLeft; st = stageEl.scrollTop;
+            lb.classList.add('is-grabbing');
+        });
+        window.addEventListener('pointermove', function(e){
+            if (!panning) return;
+            var dx = e.clientX - sx, dy = e.clientY - sy;
+            if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+            stageEl.scrollLeft = sl - dx;
+            stageEl.scrollTop  = st - dy;
+        });
+        window.addEventListener('pointerup', function(){
+            if (!panning) return;
+            panning = false;
+            lb.classList.remove('is-grabbing');
+            if (moved) suppressClick = true; // a drag should not toggle zoom
+        });
+
         // Filmstrip scroll buttons.
         function scrollStrip(dir){
             stripEl.scrollBy({ left: dir * Math.max(240, stripEl.clientWidth * 0.7), behavior: 'smooth' });
@@ -387,17 +435,22 @@ add_action('wp_footer', function() {
         sPrevEl.addEventListener('click', function(){ scrollStrip(-1); });
         sNextEl.addEventListener('click', function(){ scrollStrip(1); });
 
-        // Click the dark backdrop (not the image or controls) to close.
+        // Click the dark backdrop to close; while zoomed, a click off the image
+        // zooms back out instead (so you don't close by accident).
         lb.addEventListener('click', function(e){
+            if (isZoomed()) {
+                if (e.target !== imgEl) zoomOut();
+                return;
+            }
             if (e.target === lb || e.target.classList.contains('ts-ss-lb-stage') || e.target.classList.contains('ts-ss-lb-figure')) close();
         });
 
-        // Keyboard: Esc closes, arrows navigate.
+        // Keyboard: Esc exits zoom first (then closes); arrows navigate when not zoomed.
         document.addEventListener('keydown', function(e){
             if (!lb.classList.contains('is-open')) return;
-            if (e.key === 'Escape')     { close(); }
-            else if (e.key === 'ArrowLeft')  { show(index - 1); }
-            else if (e.key === 'ArrowRight') { show(index + 1); }
+            if (e.key === 'Escape')     { if (isZoomed()) zoomOut(); else close(); }
+            else if (e.key === 'ArrowLeft')  { if (!isZoomed()) show(index - 1); }
+            else if (e.key === 'ArrowRight') { if (!isZoomed()) show(index + 1); }
         });
 
         // Swipe on touch devices.
@@ -406,6 +459,7 @@ add_action('wp_footer', function() {
             tx = e.changedTouches[0].clientX; ty = e.changedTouches[0].clientY;
         }, { passive: true });
         lb.addEventListener('touchend', function(e){
+            if (isZoomed()) return; // let the zoomed image pan/scroll instead of navigating
             var dx = e.changedTouches[0].clientX - tx;
             var dy = e.changedTouches[0].clientY - ty;
             if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) show(index + (dx < 0 ? 1 : -1));
@@ -442,7 +496,17 @@ add_action('wp_head', function() {
     .ts-ss-lb-stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;overflow:hidden;padding:70px 96px 14px;}
     /* White frame around the shot, like Nintendo's viewer */
     .ts-ss-lb-figure{margin:0;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:100%;min-height:0;background:#fff;padding:8px;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.55);}
-    #ts-ss-lb-img{display:block;max-width:min(1120px,84vw);max-height:calc(100vh - 285px);width:auto;height:auto;object-fit:contain;border-radius:5px;}
+    #ts-ss-lb-img{display:block;max-width:min(1120px,84vw);max-height:calc(100vh - 285px);width:auto;height:auto;object-fit:contain;border-radius:5px;cursor:zoom-in;}
+
+    /* ---------- Zoom to full screen (click the open image) ---------- */
+    #ts-ss-lb.is-zoomed .ts-ss-lb-stage{padding:0;overflow:auto;justify-content:safe center;align-items:safe center;}
+    #ts-ss-lb.is-zoomed .ts-ss-lb-figure{max-width:none;max-height:none;background:transparent;padding:0;border-radius:0;box-shadow:none;flex:0 0 auto;}
+    #ts-ss-lb.is-zoomed #ts-ss-lb-img{max-width:none;max-height:none;width:auto;height:auto;border-radius:0;cursor:zoom-out;}
+    #ts-ss-lb.is-zoomed .ts-ss-lb-nav,
+    #ts-ss-lb.is-zoomed .ts-ss-lb-bottom{display:none !important;}
+    #ts-ss-lb.is-zoomed.is-grabbing #ts-ss-lb-img{cursor:grabbing;}
+    #ts-ss-lb-hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;background:rgba(0,0,0,.62);color:#fff;font-size:12px;font-weight:600;padding:6px 13px;border-radius:999px;pointer-events:none;opacity:0;transition:opacity .2s ease;white-space:nowrap;}
+    #ts-ss-lb.is-zoomed #ts-ss-lb-hint{opacity:1;}
 
     .ts-ss-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:56px;height:56px;border:none;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s ease,transform .15s ease;}
     .ts-ss-lb-nav:hover{background:rgba(255,255,255,.3);}
