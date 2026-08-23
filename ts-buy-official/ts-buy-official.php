@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TS Buy Official
  * Description: Adds a "Buy the official version" box to posts. Paste a Nintendo eShop URL and fetch the live price (Nintendo price API) plus title, platform, excerpt and image from the store page. Every field stays editable as a manual fallback.
- * Version: 1.1
+ * Version: 1.2
  * Author: NSPVault
  * License: GPL-2.0-or-later
  * Text Domain: ts-buy-official
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_BO_VER', '1.1' );
+define( 'TS_BO_VER', '1.2' );
 
 /* ============================================================
  * Settings helpers
@@ -589,10 +589,7 @@ function ts_bo_render_box( $post_id ) {
 	$image    = get_post_meta( $post_id, '_ts_bo_image', true );
 	$img_w    = (int) get_post_meta( $post_id, '_ts_bo_img_w', true );
 	$img_h    = (int) get_post_meta( $post_id, '_ts_bo_img_h', true );
-
-	if ( empty( $s['show_excerpt'] ) ) {
-		$excerpt = '';
-	}
+	$country  = get_post_meta( $post_id, '_ts_bo_country', true );
 
 	// Need at least a buy link to be useful.
 	if ( '' === $url && '' === $price && '' === $title ) {
@@ -602,15 +599,34 @@ function ts_bo_render_box( $post_id ) {
 		$title = get_the_title( $post_id );
 	}
 
+	// Description line: the store excerpt (if enabled) else the subheading.
+	$desc = '';
+	if ( ! empty( $s['show_excerpt'] ) && '' !== $excerpt ) {
+		$desc = wp_trim_words( $excerpt, 42, '…' );
+	} elseif ( ! empty( $s['subheading'] ) ) {
+		$desc = $s['subheading'];
+	}
+
+	// Top-right store/region label.
+	$region = 'Nintendo eShop';
+	if ( $country ) {
+		$region .= ' · ' . strtoupper( $country );
+	}
+
+	$has_bar = ( '' !== $price || '' !== $url );
+
 	ob_start();
 	?>
 	<div class="ts-bo-card" role="complementary" aria-label="Buy the official version">
-		<div class="ts-bo-eyebrow">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
-			<span><?php echo esc_html( $s['heading'] ); ?></span>
+		<div class="ts-bo-top">
+			<span class="ts-bo-label">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+				<?php echo esc_html( $s['heading'] ); ?>
+			</span>
+			<span class="ts-bo-region"><?php echo esc_html( $region ); ?></span>
 		</div>
 
-		<div class="ts-bo-body">
+		<div class="ts-bo-body<?php echo $image ? '' : ' ts-bo-noimg'; ?>">
 			<?php if ( $image ) : ?>
 				<div class="ts-bo-art"<?php echo ( $img_w && $img_h ) ? ' style="aspect-ratio:' . (int) $img_w . '/' . (int) $img_h . ';"' : ''; ?>>
 					<img src="<?php echo esc_url( $image ); ?>" alt="<?php echo esc_attr( $title ); ?> — official cover art"
@@ -619,16 +635,21 @@ function ts_bo_render_box( $post_id ) {
 			<?php endif; ?>
 
 			<div class="ts-bo-main">
-				<?php if ( $s['subheading'] ) : ?><p class="ts-bo-sub"><?php echo esc_html( $s['subheading'] ); ?></p><?php endif; ?>
 				<h3 class="ts-bo-title"><?php echo esc_html( $title ); ?></h3>
+				<?php if ( $platform ) : ?><div class="ts-bo-plat"><?php echo esc_html( $platform ); ?></div><?php endif; ?>
+				<?php if ( $desc ) : ?><p class="ts-bo-desc"><?php echo esc_html( $desc ); ?></p><?php endif; ?>
+			</div>
+		</div>
 
-				<div class="ts-bo-chips">
-					<?php if ( $platform ) : ?><span class="ts-bo-chip ts-bo-chip-plat"><?php echo esc_html( $platform ); ?></span><?php endif; ?>
-					<?php if ( $price ) : ?><span class="ts-bo-chip ts-bo-chip-price"><?php echo esc_html( $price ); ?></span><?php endif; ?>
-					<?php if ( $note ) : ?><span class="ts-bo-note"><?php echo esc_html( $note ); ?></span><?php endif; ?>
-				</div>
-
-				<?php if ( $excerpt ) : ?><p class="ts-bo-excerpt"><?php echo esc_html( wp_trim_words( $excerpt, 45, '…' ) ); ?></p><?php endif; ?>
+		<?php if ( $has_bar ) : ?>
+			<div class="ts-bo-bar">
+				<?php if ( '' !== $price ) : ?>
+					<div class="ts-bo-priceblock">
+						<span class="ts-bo-plabel">Price</span>
+						<span class="ts-bo-price"><?php echo esc_html( $price ); ?></span>
+						<?php if ( $note ) : ?><span class="ts-bo-pricenote"><?php echo esc_html( $note ); ?></span><?php endif; ?>
+					</div>
+				<?php endif; ?>
 
 				<?php if ( $url ) : ?>
 					<a class="ts-bo-btn" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="nofollow noopener sponsored">
@@ -636,10 +657,10 @@ function ts_bo_render_box( $post_id ) {
 						<?php echo esc_html( $s['button_text'] ); ?>
 					</a>
 				<?php endif; ?>
-
-				<?php if ( $s['disclaimer'] ) : ?><p class="ts-bo-disclaimer"><?php echo esc_html( $s['disclaimer'] ); ?></p><?php endif; ?>
 			</div>
-		</div>
+		<?php endif; ?>
+
+		<?php if ( $s['disclaimer'] ) : ?><p class="ts-bo-disclaimer"><?php echo esc_html( $s['disclaimer'] ); ?></p><?php endif; ?>
 	</div>
 	<?php
 	return ob_get_clean();
@@ -762,36 +783,48 @@ function ts_bo_styles() {
 	?>
 	<style id="ts-bo-css">
 	.ts-bo-card{
-		--bo-accent:#e8394c; --bo-accent2:#ff6a5a; --bo-ink:#0f172a; --bo-muted:#64748b;
-		border:1px solid #eceef3; border-radius:18px; background:#fff;
-		box-shadow:0 12px 30px rgba(15,23,42,.07); overflow:hidden; margin:32px 0;
+		--bo-accent:#e8394c; --bo-ink:#0f172a; --bo-muted:#64748b; --bo-line:#eceef3;
+		box-sizing:border-box; border:1px solid #dfe3ec; border-radius:16px; background:#fff;
+		box-shadow:0 10px 30px rgba(15,23,42,.06); padding:24px; margin:32px 0; color:var(--bo-ink);
 	}
-	.ts-bo-eyebrow{ display:flex; align-items:center; gap:8px; padding:12px 18px;
-		font-size:13px; font-weight:800; letter-spacing:.02em; color:#fff;
-		background:linear-gradient(90deg,var(--bo-accent),var(--bo-accent2)); }
-	.ts-bo-eyebrow svg{ width:16px; height:16px; }
-	.ts-bo-body{ display:flex; gap:20px; padding:20px; align-items:flex-start; }
-	.ts-bo-art{ flex:0 0 auto; width:150px; max-width:38%; border-radius:12px;
-		background:#f1f5f9; overflow:hidden; }
-	.ts-bo-art img{ width:100%; height:auto; border-radius:12px; display:block;
+	.ts-bo-card *{ box-sizing:border-box; }
+	/* Top row: label + region, hairline separated */
+	.ts-bo-top{ display:flex; align-items:center; justify-content:space-between; gap:12px;
+		padding-bottom:16px; margin-bottom:18px; border-bottom:1px solid var(--bo-line); flex-wrap:wrap; }
+	.ts-bo-label{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; font-weight:700;
+		letter-spacing:.12em; text-transform:uppercase; color:var(--bo-muted); }
+	.ts-bo-label svg{ width:14px; height:14px; color:var(--bo-accent); flex:0 0 auto; }
+	.ts-bo-region{ font-size:12px; color:#94a3b8; white-space:nowrap; }
+	/* Body: cover + details */
+	.ts-bo-body{ display:grid; grid-template-columns:96px 1fr; gap:20px; align-items:center; }
+	.ts-bo-body.ts-bo-noimg{ grid-template-columns:1fr; }
+	.ts-bo-art{ width:96px; border-radius:12px; overflow:hidden; background:#f1f5f9;
 		box-shadow:0 8px 20px rgba(15,23,42,.16); }
-	.ts-bo-main{ flex:1; min-width:0; }
-	.ts-bo-sub{ margin:0 0 6px; color:var(--bo-muted); font-size:14px; }
-	.ts-bo-title{ margin:0 0 12px; font-size:20px; font-weight:800; line-height:1.25; color:var(--bo-ink); }
-	.ts-bo-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
-	.ts-bo-chip{ font-size:13px; font-weight:800; padding:4px 12px; border-radius:999px; }
-	.ts-bo-chip-plat{ color:#334155; background:#f1f5f9; border:1px solid #e6eaf1; }
-	.ts-bo-chip-price{ color:var(--bo-accent); background:#fff1f2; border:1px solid #fbdfe3; }
-	.ts-bo-note{ font-size:12.5px; color:#15803d; font-weight:700; }
-	.ts-bo-excerpt{ margin:0 0 16px; color:#334155; font-size:14.5px; line-height:1.6; }
+	.ts-bo-art img{ width:100%; height:auto; display:block; border-radius:12px; }
+	.ts-bo-main{ min-width:0; }
+	.ts-bo-title{ margin:0 0 6px; font-size:21px; font-weight:800; line-height:1.2;
+		letter-spacing:-.015em; color:var(--bo-ink); }
+	.ts-bo-plat{ color:var(--bo-muted); font-size:13.5px; }
+	.ts-bo-desc{ margin:10px 0 0; color:#334155; font-size:14px; line-height:1.6; }
+	/* Bottom bar: price + button, hairline separated */
+	.ts-bo-bar{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+		margin-top:20px; padding-top:18px; border-top:1px solid var(--bo-line); }
+	.ts-bo-priceblock{ display:flex; flex-direction:column; }
+	.ts-bo-plabel{ font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--bo-muted); }
+	.ts-bo-price{ font-size:26px; font-weight:800; line-height:1.1; letter-spacing:-.01em;
+		font-variant-numeric:tabular-nums; color:var(--bo-ink); }
+	.ts-bo-pricenote{ margin-top:2px; font-size:12px; font-weight:600; color:#15803d; }
 	.ts-bo-btn{ display:inline-flex; align-items:center; gap:9px; text-decoration:none;
-		background:linear-gradient(135deg,var(--bo-accent),var(--bo-accent2)); color:#fff;
-		font-weight:800; font-size:15px; padding:12px 22px; border-radius:12px;
-		box-shadow:0 8px 18px rgba(232,57,76,.30); transition:transform .15s ease, box-shadow .15s ease; }
-	.ts-bo-btn:hover{ transform:translateY(-1px); box-shadow:0 12px 22px rgba(232,57,76,.38); color:#fff; }
-	.ts-bo-btn svg{ width:18px; height:18px; }
-	.ts-bo-disclaimer{ margin:14px 0 0; color:#94a3b8; font-size:12px; line-height:1.5; }
-	@media (max-width:560px){ .ts-bo-body{ flex-direction:column; } .ts-bo-art{ width:130px; max-width:130px; } }
+		background:var(--bo-ink); color:#fff; font-weight:700; font-size:14.5px; padding:12px 24px;
+		border-radius:11px; transition:background .15s ease, transform .15s ease; }
+	.ts-bo-btn:hover{ background:#000; color:#fff; transform:translateY(-1px); }
+	.ts-bo-btn svg{ width:17px; height:17px; flex:0 0 auto; }
+	.ts-bo-disclaimer{ margin:16px 0 0; color:#94a3b8; font-size:12px; line-height:1.5; }
+	@media (max-width:560px){
+		.ts-bo-body{ grid-template-columns:80px 1fr; gap:16px; }
+		.ts-bo-art{ width:80px; }
+	}
+	@media (prefers-reduced-motion: reduce){ .ts-bo-btn{ transition:none; } }
 	</style>
 	<?php
 }
