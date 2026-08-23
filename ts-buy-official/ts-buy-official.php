@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TS Buy Official
  * Description: Adds a "Buy the official version" box to posts. Paste a Nintendo eShop URL and fetch the live price (Nintendo price API) plus title, platform, excerpt and image from the store page. Every field stays editable as a manual fallback.
- * Version: 1.0
+ * Version: 1.1
  * Author: NSPVault
  * License: GPL-2.0-or-later
  * Text Domain: ts-buy-official
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TS_BO_VER', '1.0' );
+define( 'TS_BO_VER', '1.1' );
 
 /* ============================================================
  * Settings helpers
@@ -34,6 +34,8 @@ function ts_bo_settings() {
 		'subheading'      => 'If you enjoy this game, please buy the official version.',
 		'button_text'     => 'Buy on Nintendo eShop',
 		'disclaimer'      => 'Prices are fetched from the official store and may change. We are not affiliated with Nintendo.',
+		'show_excerpt'    => 1,
+		'output_schema'   => 0,
 	);
 	$saved = get_option( 'ts_bo_settings', array() );
 	if ( ! is_array( $saved ) ) {
@@ -197,6 +199,8 @@ function ts_bo_render_meta_box( $post ) {
 
 		<label for="ts_bo_image">Box art / image URL</label>
 		<input type="url" id="ts_bo_image" name="ts_bo_image" value="<?php echo esc_attr( $image ); ?>">
+		<input type="hidden" id="ts_bo_img_w" name="ts_bo_img_w" value="<?php echo esc_attr( get_post_meta( $post->ID, '_ts_bo_img_w', true ) ); ?>">
+		<input type="hidden" id="ts_bo_img_h" name="ts_bo_img_h" value="<?php echo esc_attr( get_post_meta( $post->ID, '_ts_bo_img_h', true ) ); ?>">
 		<div class="ts-bo-preview"><?php if ( $image ) : ?><img src="<?php echo esc_url( $image ); ?>" alt=""><?php endif; ?></div>
 	</div>
 
@@ -235,6 +239,11 @@ function ts_bo_render_meta_box( $post ) {
 					set('ts_bo_price_note', d.price_note);
 					set('ts_bo_excerpt', d.excerpt);
 					set('ts_bo_image', d.image);
+					// Image dimensions (reserve space -> no layout shift).
+					var wEl = document.getElementById('ts_bo_img_w');
+					var hEl = document.getElementById('ts_bo_img_h');
+					if ( wEl ) { wEl.value = d.img_w || ''; }
+					if ( hEl ) { hEl.value = d.img_h || ''; }
 					// Auto-tick the enable checkbox once we have something to show.
 					var chk = document.querySelector('input[name="ts_bo_enabled"]');
 					if ( chk && ( d.price || d.title ) ) { chk.checked = true; }
@@ -296,6 +305,11 @@ function ts_bo_save_meta( $post_id ) {
 
 	$excerpt = isset( $_POST['ts_bo_excerpt'] ) ? sanitize_textarea_field( wp_unslash( $_POST['ts_bo_excerpt'] ) ) : '';
 	update_post_meta( $post_id, '_ts_bo_excerpt', $excerpt );
+
+	$img_w = isset( $_POST['ts_bo_img_w'] ) ? absint( $_POST['ts_bo_img_w'] ) : 0;
+	$img_h = isset( $_POST['ts_bo_img_h'] ) ? absint( $_POST['ts_bo_img_h'] ) : 0;
+	update_post_meta( $post_id, '_ts_bo_img_w', $img_w );
+	update_post_meta( $post_id, '_ts_bo_img_h', $img_h );
 }
 
 /* ============================================================
@@ -327,6 +341,8 @@ function ts_bo_ajax_fetch() {
 		'price_note' => '',
 		'excerpt'    => '',
 		'image'      => '',
+		'img_w'      => 0,
+		'img_h'      => 0,
 		'notice'     => '',
 	);
 
@@ -339,6 +355,15 @@ function ts_bo_ajax_fetch() {
 	$out['title']   = ts_bo_meta_content( $html, 'og:title' );
 	$out['excerpt'] = ts_bo_meta_content( $html, 'og:description' );
 	$out['image']   = ts_bo_meta_content( $html, 'og:image' );
+
+	// Intrinsic image dimensions so the front end can reserve space (no CLS).
+	if ( $out['image'] ) {
+		$dims = ts_bo_image_dims( $out['image'] );
+		if ( $dims ) {
+			$out['img_w'] = $dims[0];
+			$out['img_h'] = $dims[1];
+		}
+	}
 
 	// Clean the title (drop trailing store suffixes).
 	if ( $out['title'] ) {
@@ -402,6 +427,37 @@ function ts_bo_remote_html( $url ) {
 		return new WP_Error( 'empty', 'Empty response' );
 	}
 	return $body;
+}
+
+/**
+ * Get an image's pixel dimensions by downloading it once (admin-time only).
+ *
+ * @param string $url Image URL.
+ * @return array|false [ width, height ] or false.
+ */
+function ts_bo_image_dims( $url ) {
+	if ( ! function_exists( 'getimagesizefromstring' ) ) {
+		return false;
+	}
+	$res = wp_remote_get(
+		$url,
+		array(
+			'timeout'    => 12,
+			'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+		)
+	);
+	if ( is_wp_error( $res ) ) {
+		return false;
+	}
+	$body = wp_remote_retrieve_body( $res );
+	if ( '' === $body ) {
+		return false;
+	}
+	$info = @getimagesizefromstring( $body ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+	if ( ! $info || empty( $info[0] ) || empty( $info[1] ) ) {
+		return false;
+	}
+	return array( (int) $info[0], (int) $info[1] );
 }
 
 /**
@@ -531,6 +587,12 @@ function ts_bo_render_box( $post_id ) {
 	$note     = get_post_meta( $post_id, '_ts_bo_price_note', true );
 	$excerpt  = get_post_meta( $post_id, '_ts_bo_excerpt', true );
 	$image    = get_post_meta( $post_id, '_ts_bo_image', true );
+	$img_w    = (int) get_post_meta( $post_id, '_ts_bo_img_w', true );
+	$img_h    = (int) get_post_meta( $post_id, '_ts_bo_img_h', true );
+
+	if ( empty( $s['show_excerpt'] ) ) {
+		$excerpt = '';
+	}
 
 	// Need at least a buy link to be useful.
 	if ( '' === $url && '' === $price && '' === $title ) {
@@ -550,8 +612,9 @@ function ts_bo_render_box( $post_id ) {
 
 		<div class="ts-bo-body">
 			<?php if ( $image ) : ?>
-				<div class="ts-bo-art">
-					<img src="<?php echo esc_url( $image ); ?>" alt="<?php echo esc_attr( $title ); ?> — official cover" loading="lazy">
+				<div class="ts-bo-art"<?php echo ( $img_w && $img_h ) ? ' style="aspect-ratio:' . (int) $img_w . '/' . (int) $img_h . ';"' : ''; ?>>
+					<img src="<?php echo esc_url( $image ); ?>" alt="<?php echo esc_attr( $title ); ?> — official cover art"
+						<?php echo ( $img_w && $img_h ) ? 'width="' . (int) $img_w . '" height="' . (int) $img_h . '" ' : ''; ?>loading="lazy" decoding="async">
 				</div>
 			<?php endif; ?>
 
@@ -623,6 +686,67 @@ function ts_bo_shortcode( $atts ) {
 }
 
 /* ============================================================
+ * Structured data (optional, off by default)
+ * ============================================================ */
+
+add_action( 'wp_head', 'ts_bo_schema', 5 );
+
+/**
+ * Output a VideoGame JSON-LD node for the current post, if enabled.
+ *
+ * Deliberately describes the GAME (name, platform, image) — never a
+ * third-party Offer/price — so it can't be flagged as misleading markup.
+ * Off by default: enable only if no other plugin already emits game schema
+ * for these posts, to avoid duplicate VideoGame entities.
+ */
+function ts_bo_schema() {
+	if ( ! is_singular( ts_bo_post_types() ) ) {
+		return;
+	}
+	$s = ts_bo_settings();
+	if ( empty( $s['output_schema'] ) ) {
+		return;
+	}
+	$post_id = get_queried_object_id();
+	if ( ! $post_id || '1' !== get_post_meta( $post_id, '_ts_bo_enabled', true ) ) {
+		return;
+	}
+	$title = get_post_meta( $post_id, '_ts_bo_title', true );
+	if ( '' === $title ) {
+		$title = get_the_title( $post_id );
+	}
+	if ( '' === $title ) {
+		return;
+	}
+
+	$schema = array(
+		'@context' => 'https://schema.org',
+		'@type'    => 'VideoGame',
+		'name'     => $title,
+		'url'      => get_permalink( $post_id ),
+	);
+
+	$image = get_post_meta( $post_id, '_ts_bo_image', true );
+	if ( $image ) {
+		$schema['image'] = $image;
+	}
+	$platform = get_post_meta( $post_id, '_ts_bo_platform', true );
+	if ( $platform ) {
+		$schema['gamePlatform'] = $platform;
+	}
+	$excerpt = get_post_meta( $post_id, '_ts_bo_excerpt', true );
+	if ( $excerpt && ! empty( $s['show_excerpt'] ) ) {
+		$schema['description'] = wp_strip_all_tags( $excerpt );
+	}
+	$url = get_post_meta( $post_id, '_ts_bo_url', true );
+	if ( $url ) {
+		$schema['sameAs'] = $url;
+	}
+
+	echo '<script type="application/ld+json">' . wp_json_encode( $schema ) . '</script>' . "\n";
+}
+
+/* ============================================================
  * Front-end styles
  * ============================================================ */
 
@@ -647,7 +771,8 @@ function ts_bo_styles() {
 		background:linear-gradient(90deg,var(--bo-accent),var(--bo-accent2)); }
 	.ts-bo-eyebrow svg{ width:16px; height:16px; }
 	.ts-bo-body{ display:flex; gap:20px; padding:20px; align-items:flex-start; }
-	.ts-bo-art{ flex:0 0 auto; width:150px; max-width:38%; }
+	.ts-bo-art{ flex:0 0 auto; width:150px; max-width:38%; border-radius:12px;
+		background:#f1f5f9; overflow:hidden; }
 	.ts-bo-art img{ width:100%; height:auto; border-radius:12px; display:block;
 		box-shadow:0 8px 20px rgba(15,23,42,.16); }
 	.ts-bo-main{ flex:1; min-width:0; }
@@ -707,6 +832,8 @@ function ts_bo_sanitize_settings( $input ) {
 		$out['post_types'] = array( 'post' );
 	}
 	$out['auto_append']     = empty( $input['auto_append'] ) ? 0 : 1;
+	$out['show_excerpt']    = empty( $input['show_excerpt'] ) ? 0 : 1;
+	$out['output_schema']   = empty( $input['output_schema'] ) ? 0 : 1;
 	$out['default_country'] = isset( $input['default_country'] ) ? strtoupper( sanitize_text_field( $input['default_country'] ) ) : 'US';
 	$out['heading']         = isset( $input['heading'] ) ? sanitize_text_field( $input['heading'] ) : '';
 	$out['subheading']      = isset( $input['subheading'] ) ? sanitize_text_field( $input['subheading'] ) : '';
@@ -745,6 +872,14 @@ function ts_bo_settings_page() {
 				<tr>
 					<th scope="row">Auto-append to content</th>
 					<td><label><input type="checkbox" name="ts_bo_settings[auto_append]" value="1" <?php checked( ! empty( $s['auto_append'] ) ); ?>> Show the box automatically at the end of each post. (Turn off to place it manually with the <code>[ts_buy_official]</code> shortcode.)</label></td>
+				</tr>
+				<tr>
+					<th scope="row">Show description</th>
+					<td><label><input type="checkbox" name="ts_bo_settings[show_excerpt]" value="1" <?php checked( ! empty( $s['show_excerpt'] ) ); ?>> Include the short description in the box. (Turn off to avoid reusing the store's copy — the box still shows title, platform, price and button.)</label></td>
+				</tr>
+				<tr>
+					<th scope="row">Structured data</th>
+					<td><label><input type="checkbox" name="ts_bo_settings[output_schema]" value="1" <?php checked( ! empty( $s['output_schema'] ) ); ?>> Output <code>VideoGame</code> schema for the game. <strong>Leave OFF</strong> if another plugin (e.g. your Game Info box) already adds game schema to these posts, to avoid duplicate entities.</label></td>
 				</tr>
 				<tr>
 					<th scope="row">Default price region</th>
